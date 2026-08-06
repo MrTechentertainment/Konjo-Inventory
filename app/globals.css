@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: 'Avenir Next', 'Trebuchet MS', system-ui, sans-serif;
+  --font-body: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  overscroll-behavior-y: contain;
+}
+
+button, a { touch-action: manipulation; }
+
+/* Avoid rendering long, off-screen operational lists on mobile until needed. */
+article, details { content-visibility: auto; contain-intrinsic-size: 1px 120px; }
+
+@media (max-width: 640px), (prefers-reduced-motion: reduce) {
+  .backdrop-blur-xl { backdrop-filter: blur(10px); }
+  .backdrop-blur-lg { backdrop-filter: blur(8px); }
+}
+
+/* Visible keyboard focus everywhere, even though we hide the default browser ring. */
+:focus-visible {
+  outline: 2px solid #e4402a;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Konjo's one signature gradient — chili red, ginger amber, chili green,
+   evoking the three product lines scattered together. Used exactly once,
+   as a soft glow behind the header. */
+.bg-mitmita-glow {
+  background: radial-gradient(
+    120% 100% at 15% 0%,
+    rgba(228, 64, 42, 0.35) 0%,
+    rgba(237, 168, 59, 0.18) 38%,
+    rgba(91, 140, 62, 0.14) 62%,
+    transparent 85%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

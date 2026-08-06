@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+build/
+
+# Editor history and backups
+.history/
+
+# Environment variables
+.env
+.env.local
+
+# Mac/Windows OS files
+.DS_Store
+Thumbs.db
