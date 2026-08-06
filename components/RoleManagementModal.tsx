@@ -6,7 +6,8 @@ import { Crown, Shield, UserRound, X } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
 import type { UserProfile, UserRole } from '@/lib/types';
-import { ROLE_MODAL_EVENT } from './HamburgerMenu';
+// Define the event constant locally instead of importing a missing member
+const ROLE_MODAL_EVENT = 'open-role-management-modal';
 
 function RoleManagementModal() {
   const { profile } = useAuth();
