@@ -60,42 +60,38 @@ create index if not exists outlet_logs_outlet_time_idx on public.outlet_logs(out
 create index if not exists outlet_logs_time_idx on public.outlet_logs("timestamp" desc);
 
 -- -----------------------------------------------------------------------------
--- Root Auth identity. The exact requested initial credential is Natanim/N4321.
--- Change this password immediately after first deployment if operational policy
--- permits; the account's identity and SUPER_ADMIN role remain immutable.
+-- Root Owner profile attachment
+--
+-- Create the Auth identity through Supabase Dashboard or the Auth Admin API.
+-- This migration never creates or resets Auth passwords.
 -- -----------------------------------------------------------------------------
 do $$
 declare
   root_id uuid;
-  root_email constant text := 'natanim@konjo.internal';
 begin
-  select id into root_id from auth.users where lower(email) = root_email limit 1;
+  select id
+    into root_id
+  from auth.users
+  where lower(email) = 'natanim@konjo.com'
+  limit 1;
+
   if root_id is null then
-    root_id := '4b36aa09-11b2-4b2e-9322-69e4f1a80001'::uuid;
-    insert into auth.users (
-      instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
-      raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
-      confirmation_token, recovery_token, email_change_token_new, email_change
-    ) values (
-      '00000000-0000-0000-0000-000000000000', root_id, 'authenticated', 'authenticated',
-      root_email, extensions.crypt('N4321', extensions.gen_salt('bf')), now(),
-      '{"provider":"email","providers":["email"]}'::jsonb,
-      '{"username":"Natanim"}'::jsonb, now(), now(), '', '', '', ''
-    );
-  else
-    update auth.users
-       set email_confirmed_at = coalesce(email_confirmed_at, now()),
-           raw_user_meta_data = coalesce(raw_user_meta_data, '{}'::jsonb) || '{"username":"Natanim"}'::jsonb,
-           updated_at = now()
-     where id = root_id;
+    raise exception
+      'Create and confirm natanim@konjo.com in Supabase Auth before running this migration';
   end if;
 
-  insert into auth.identities (id, user_id, identity_data, provider, provider_id, created_at, updated_at)
-  values (gen_random_uuid(), root_id, jsonb_build_object('sub', root_id::text, 'email', root_email), 'email', root_id::text, now(), now())
-  on conflict (provider_id, provider) do nothing;
-
-  insert into public.users_profiles (id, username, password_hash, role)
-  values (root_id, 'Natanim', extensions.crypt('N4321', extensions.gen_salt('bf')), 'SUPER_ADMIN')
+  insert into public.users_profiles (
+    id,
+    username,
+    password_hash,
+    role
+  )
+  values (
+    root_id,
+    'Natanim',
+    null,
+    'SUPER_ADMIN'
+  )
   on conflict (id) do nothing;
 end $$;
 

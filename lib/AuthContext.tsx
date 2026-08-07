@@ -24,8 +24,17 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+const ROOT_OWNER_EMAIL = 'natanim@konjo.com';
+
 function usernameEmail(username: string): string {
-  return `${username.trim().toLowerCase()}@konjo.internal`;
+  const normalizedUsername = username.trim().toLowerCase();
+
+  if (normalizedUsername === 'natanim') {
+    return ROOT_OWNER_EMAIL;
+  }
+
+  return `${normalizedUsername}@konjo.internal`;
+
 }
 
 function friendlyAuthError(message: string): string {
