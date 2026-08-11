@@ -3,12 +3,12 @@
 import { memo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
-import type { Product } from '@/lib/types';
+import type { Product, ProductCreateInput } from '@/lib/types';
 
 interface AddProductModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (input: Pick<Product, 'name' | 'sku' | 'category' | 'current_stock' | 'low_stock_threshold'>) => Promise<Product | null>;
+  onSubmit: (input: ProductCreateInput) => Promise<Product | null>;
 }
 
 function AddProductModal({ isOpen, onClose, onSubmit }: AddProductModalProps) {
@@ -17,6 +17,8 @@ function AddProductModal({ isOpen, onClose, onSubmit }: AddProductModalProps) {
   const [category, setCategory] = useState('');
   const [startingStock, setStartingStock] = useState('0');
   const [threshold, setThreshold] = useState('10');
+  const [unitPrice, setUnitPrice] = useState('0');
+  const [taxPercent, setTaxPercent] = useState('0');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,6 +30,8 @@ function AddProductModal({ isOpen, onClose, onSubmit }: AddProductModalProps) {
     setCategory('');
     setStartingStock('0');
     setThreshold('10');
+    setUnitPrice('0');
+    setTaxPercent('0');
     setError(null);
   };
 
@@ -41,21 +45,34 @@ function AddProductModal({ isOpen, onClose, onSubmit }: AddProductModalProps) {
       setError('Name, SKU and category are all required.');
       return;
     }
+    const price = Number(unitPrice);
+    const tax = Number(taxPercent);
+    if (!Number.isFinite(price) || price < 0 || !Number.isFinite(tax) || tax < 0 || tax > 100) {
+      setError('Price must be zero or more, and tax must be between 0 and 100%.');
+      return;
+    }
     setSubmitting(true);
     setError(null);
-    const result = await onSubmit({
-      name: name.trim(),
-      sku: sku.trim().toUpperCase(),
-      category: category.trim(),
-      current_stock: Math.max(0, parseInt(startingStock, 10) || 0),
-      low_stock_threshold: Math.max(0, parseInt(threshold, 10) || 10),
-    });
-    setSubmitting(false);
-    if (result) {
-      reset();
-      onClose();
-    } else {
-      setError('Could not add product — check the SKU is unique and try again.');
+    try {
+      const result = await onSubmit({
+        name: name.trim(),
+        sku: sku.trim().toUpperCase(),
+        category: category.trim(),
+        current_stock: Math.max(0, parseInt(startingStock, 10) || 0),
+        low_stock_threshold: Math.max(0, parseInt(threshold, 10) || 10),
+        unit_price_etb: price,
+        tax_rate: tax / 100,
+      });
+      if (result) {
+        reset();
+        onClose();
+      } else {
+        setError('Could not add product — check the SKU is unique and try again.');
+      }
+    } catch {
+      setError('Could not add product. Check the connection and try again.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -118,6 +135,17 @@ function AddProductModal({ isOpen, onClose, onSubmit }: AddProductModalProps) {
                   placeholder="Datta"
                   className="mt-1 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-[13.5px] text-konjo-cream placeholder:text-konjo-cream/30 focus:outline-none focus:ring-2 focus:ring-konjo-red/40"
                 />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] font-medium text-konjo-cream/50">Unit price (ETB)</label>
+                <input type="number" min={0} step="0.01" inputMode="decimal" value={unitPrice} onChange={(event) => setUnitPrice(event.target.value)} className="mt-1 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-[13.5px] tabular-nums text-konjo-cream focus:outline-none focus:ring-2 focus:ring-konjo-red/40" />
+              </div>
+              <div>
+                <label className="text-[11px] font-medium text-konjo-cream/50">Tax (%)</label>
+                <input type="number" min={0} max={100} step="0.01" inputMode="decimal" value={taxPercent} onChange={(event) => setTaxPercent(event.target.value)} className="mt-1 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-[13.5px] tabular-nums text-konjo-cream focus:outline-none focus:ring-2 focus:ring-konjo-red/40" />
               </div>
             </div>
 

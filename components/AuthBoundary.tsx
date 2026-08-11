@@ -3,7 +3,6 @@
 import { useAuth } from '@/lib/AuthContext';
 import LoginGate from './LoginGate';
 import BrandLogo from './BrandLogo';
-import ForcePasswordReset from './ForcePasswordReset';
 
 export default function AuthBoundary({ children }: { children: React.ReactNode }) {
   const { session, profile, loading } = useAuth();
@@ -15,6 +14,5 @@ export default function AuthBoundary({ children }: { children: React.ReactNode }
     );
   }
   if (!session || !profile) return <LoginGate />;
-  if (profile.must_reset_password) return <ForcePasswordReset />;
   return <>{children}</>;
 }

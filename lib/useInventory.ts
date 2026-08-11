@@ -1,61 +1,106 @@
 'use client';
 
-import { useCallback, useEffect, useReducer, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { errorMessage, isTransientError, newOperationId, withTimeout } from './async';
 import { supabase } from './supabaseClient';
-import type { Product, SyncState, TransactionType } from './types';
+import type { Product, ProductCreateInput, SyncState, TransactionType } from './types';
+
+interface PendingMutation {
+  productId: string;
+  delta: number;
+}
 
 interface State {
   serverProducts: Product[];
-  pendingDeltas: Record<string, number>;
+  pending: Record<string, PendingMutation>;
+  deferredRealtime: Record<string, Product>;
   loading: boolean;
   error: string | null;
 }
 
 type Action =
   | { type: 'SET_PRODUCTS'; products: Product[] }
-  | { type: 'UPSERT_PRODUCT'; product: Product }
-  | { type: 'ADD_PENDING'; productId: string; delta: number }
-  | { type: 'CLEAR_PENDING'; productId: string; delta: number }
+  | { type: 'REALTIME_PRODUCT'; product: Product }
+  | { type: 'START_MUTATION'; operationId: string; productId: string; delta: number }
+  | { type: 'CONFIRM_MUTATION'; operationId: string; product: Product }
+  | { type: 'FAIL_MUTATION'; operationId: string }
+  | { type: 'SET_LOADING'; loading: boolean }
   | { type: 'SET_ERROR'; error: string | null };
 
 const initialState: State = {
   serverProducts: [],
-  pendingDeltas: {},
+  pending: {},
+  deferredRealtime: {},
   loading: true,
   error: null,
 };
 
+function revision(product: Product | undefined): number {
+  return Number(product?.stock_revision ?? 0);
+}
+
+function upsertProduct(products: Product[], product: Product): Product[] {
+  const current = products.find((item) => item.id === product.id);
+  if (current && revision(current) > revision(product)) return products;
+  return current
+    ? products.map((item) => (item.id === product.id ? product : item))
+    : [...products, product];
+}
+
+function hasPendingForProduct(pending: Record<string, PendingMutation>, productId: string): boolean {
+  return Object.values(pending).some((mutation) => mutation.productId === productId);
+}
+
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case 'SET_PRODUCTS':
-      return { ...state, serverProducts: action.products, pendingDeltas: {}, loading: false };
-    case 'UPSERT_PRODUCT': {
-      const exists = state.serverProducts.some((p) => p.id === action.product.id);
+      return { ...state, serverProducts: action.products, loading: false };
+    case 'REALTIME_PRODUCT':
+      if (hasPendingForProduct(state.pending, action.product.id)) {
+        const previous = state.deferredRealtime[action.product.id];
+        if (previous && revision(previous) >= revision(action.product)) return state;
+        return {
+          ...state,
+          deferredRealtime: { ...state.deferredRealtime, [action.product.id]: action.product },
+        };
+      }
+      return { ...state, serverProducts: upsertProduct(state.serverProducts, action.product) };
+    case 'START_MUTATION':
       return {
         ...state,
-        serverProducts: exists
-          ? state.serverProducts.map((p) => (p.id === action.product.id ? action.product : p))
-          : [...state.serverProducts, action.product],
-      };
-    }
-    case 'ADD_PENDING':
-      return {
-        ...state,
-        pendingDeltas: {
-          ...state.pendingDeltas,
-          [action.productId]: (state.pendingDeltas[action.productId] ?? 0) + action.delta,
+        pending: {
+          ...state.pending,
+          [action.operationId]: { productId: action.productId, delta: action.delta },
         },
       };
-    case 'CLEAR_PENDING': {
-      const next = (state.pendingDeltas[action.productId] ?? 0) - action.delta;
-      const rest = { ...state.pendingDeltas };
-      if (next === 0) {
-        delete rest[action.productId];
-      } else {
-        rest[action.productId] = next;
-      }
-      return { ...state, pendingDeltas: rest };
+    case 'CONFIRM_MUTATION': {
+      const pending = { ...state.pending };
+      delete pending[action.operationId];
+      const deferred = state.deferredRealtime[action.product.id];
+      const confirmed = deferred && revision(deferred) > revision(action.product) ? deferred : action.product;
+      const deferredRealtime = { ...state.deferredRealtime };
+      if (!hasPendingForProduct(pending, action.product.id)) delete deferredRealtime[action.product.id];
+      return {
+        ...state,
+        pending,
+        deferredRealtime,
+        serverProducts: upsertProduct(state.serverProducts, confirmed),
+      };
     }
+    case 'FAIL_MUTATION': {
+      const pending = { ...state.pending };
+      const failed = pending[action.operationId];
+      delete pending[action.operationId];
+      let serverProducts = state.serverProducts;
+      const deferredRealtime = { ...state.deferredRealtime };
+      if (failed && !hasPendingForProduct(pending, failed.productId) && deferredRealtime[failed.productId]) {
+        serverProducts = upsertProduct(serverProducts, deferredRealtime[failed.productId]);
+        delete deferredRealtime[failed.productId];
+      }
+      return { ...state, pending, deferredRealtime, serverProducts };
+    }
+    case 'SET_LOADING':
+      return { ...state, loading: action.loading };
     case 'SET_ERROR':
       return { ...state, error: action.error };
     default:
@@ -67,29 +112,23 @@ export interface AdjustInput {
   product: Product;
   delta: number;
   type: TransactionType;
-  loggedBy: string;
   notes?: string;
 }
 
-/**
- * Fetches the product catalog, keeps it in sync across every device via
- * Supabase Realtime, and exposes an optimistic `adjustStock` mutator.
- *
- * Optimistic math is deliberately kept as a *delta overlay* on top of the
- * last known server value (`pendingDeltas`), rather than mutating a copy of
- * the stock count directly. That means a slow network response, a realtime
- * push from a co-worker's phone, and a failed/rolled-back write can never
- * clobber each other or double-count — whichever arrives, the visible number
- * is always `server value + sum of this device's still-unconfirmed taps`.
- */
+function firstProduct(data: unknown): Product | null {
+  if (Array.isArray(data)) return (data[0] as Product | undefined) ?? null;
+  return (data as Product | null) ?? null;
+}
+
 export function useInventory(enabled = true) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [inflight, setInflight] = useState(0);
   const [isOnline, setIsOnline] = useState(true);
+  const queues = useRef(new Map<string, Promise<void>>());
 
   useEffect(() => {
     if (!enabled) return;
-    setIsOnline(typeof navigator !== 'undefined' ? navigator.onLine : true);
+    setIsOnline(navigator.onLine);
     const goOnline = () => setIsOnline(true);
     const goOffline = () => setIsOnline(false);
     window.addEventListener('online', goOnline);
@@ -100,123 +139,158 @@ export function useInventory(enabled = true) {
     };
   }, [enabled]);
 
-  useEffect(() => {
+  const loadProducts = useCallback(async () => {
     if (!enabled) return;
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('is_active', true)
-        .order('category', { ascending: true })
-        .order('name', { ascending: true });
-
-      if (cancelled) return;
-      if (error) {
-        dispatch({ type: 'SET_ERROR', error: error.message });
-        return;
-      }
-      dispatch({ type: 'SET_PRODUCTS', products: data ?? [] });
-    })();
-    return () => {
-      cancelled = true;
-    };
+    dispatch({ type: 'SET_LOADING', loading: true });
+    try {
+      const result = await withTimeout(
+        async (signal) =>
+          await supabase
+            .from('products')
+            .select('*')
+            .eq('is_active', true)
+            .order('category')
+            .order('name')
+            .abortSignal(signal),
+        'Loading products'
+      );
+      if (result.error) throw result.error;
+      dispatch({ type: 'SET_PRODUCTS', products: (result.data as Product[]) ?? [] });
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', error: errorMessage(error, 'Could not load products.') });
+      dispatch({ type: 'SET_LOADING', loading: false });
+    }
   }, [enabled]);
 
   useEffect(() => {
+    void loadProducts();
+  }, [loadProducts]);
+
+  useEffect(() => {
+    if (!enabled) return;
     const channel = supabase
       .channel('products-realtime-sync')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'products' },
-        (payload) => {
-          if (payload.eventType === 'DELETE') return;
-          dispatch({ type: 'UPSERT_PRODUCT', product: payload.new as Product });
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
+        if (payload.eventType !== 'DELETE') {
+          dispatch({ type: 'REALTIME_PRODUCT', product: payload.new as Product });
         }
-      )
+      })
       .subscribe();
-
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
-  }, []);
+  }, [enabled]);
 
-  const adjustStock = useCallback(async ({ product, delta, type, loggedBy, notes }: AdjustInput) => {
-    dispatch({ type: 'ADD_PENDING', productId: product.id, delta });
-    setInflight((n) => n + 1);
+  const adjustStock = useCallback(async ({ product, delta, type, notes }: AdjustInput) => {
+    if (!Number.isInteger(delta) || delta === 0) return false;
+    const operationId = newOperationId();
+    dispatch({ type: 'START_MUTATION', operationId, productId: product.id, delta });
+    setInflight((count) => count + 1);
 
-    const { error } = await supabase.from('inventory_transactions').insert({
-      product_id: product.id,
-      change_amount: delta,
-      transaction_type: type,
-      notes: notes?.trim() || null,
-      logged_by: loggedBy,
+    const previous = queues.current.get(product.id) ?? Promise.resolve();
+    let queueMarker: Promise<void>;
+    const task = previous
+      .catch(() => undefined)
+      .then(async () => {
+        try {
+          const call = async () => {
+            const result = await withTimeout(
+              async (signal) =>
+                await supabase
+                  .rpc('adjust_inventory_stock', {
+                    target_product_id: product.id,
+                    stock_delta: delta,
+                    movement_type: type,
+                    movement_notes: notes?.trim() || null,
+                    p_operation_id: operationId,
+                  })
+                  .abortSignal(signal),
+              `Saving ${product.name}`
+            );
+            if (result.error) throw result.error;
+            return result;
+          };
+          let result;
+          try {
+            result = await call();
+          } catch (caught) {
+            if (!isTransientError(caught)) throw caught;
+            result = await call();
+          }
+          const confirmed = firstProduct(result.data);
+          if (!confirmed) throw new Error('Supabase did not return the updated product.');
+          dispatch({ type: 'CONFIRM_MUTATION', operationId, product: confirmed });
+          return true;
+        } catch (error) {
+          dispatch({ type: 'FAIL_MUTATION', operationId });
+          dispatch({
+            type: 'SET_ERROR',
+            error: `“${product.name}” did not save. ${errorMessage(error, 'Stock was restored; try again.')}`,
+          });
+          return false;
+        } finally {
+          setInflight((count) => Math.max(0, count - 1));
+        }
+      });
+
+    queueMarker = task.then(() => undefined, () => undefined);
+    queues.current.set(product.id, queueMarker);
+    void queueMarker.finally(() => {
+      if (queues.current.get(product.id) === queueMarker) queues.current.delete(product.id);
     });
+    return task;
+  }, []);
 
-    setInflight((n) => Math.max(0, n - 1));
-    dispatch({ type: 'CLEAR_PENDING', productId: product.id, delta });
-
-    if (error) {
-      dispatch({
-        type: 'SET_ERROR',
-        error: `"${product.name}" didn't save — ${error.message}. Stock reverted, try again.`,
-      });
-      return false;
+  const addProduct = useCallback(async (input: ProductCreateInput) => {
+    try {
+      const result = await withTimeout(
+        async (signal) =>
+          await supabase
+            .rpc('create_inventory_product', {
+              product_name: input.name,
+              product_sku: input.sku,
+              product_category: input.category,
+              starting_stock: input.current_stock,
+              low_stock_level: input.low_stock_threshold,
+              unit_price: input.unit_price_etb,
+              product_tax_rate: input.tax_rate,
+            })
+            .abortSignal(signal),
+        'Creating product'
+      );
+      if (result.error) throw result.error;
+      const product = firstProduct(result.data);
+      if (!product) throw new Error('Supabase did not return the new product.');
+      dispatch({ type: 'REALTIME_PRODUCT', product });
+      return product;
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', error: errorMessage(error, 'Could not add the product.') });
+      return null;
     }
-    return true;
   }, []);
 
-  const addProduct = useCallback(
-    async (input: Pick<Product, 'name' | 'sku' | 'category' | 'current_stock' | 'low_stock_threshold'>) => {
-      const { data: productId, error } = await supabase.rpc('create_catalog_product', {
-        product_name: input.name, product_sku: input.sku, product_category: input.category,
-        product_description: '', starting_stock: input.current_stock, low_threshold: input.low_stock_threshold,
-      });
-      if (error) {
-        dispatch({ type: 'SET_ERROR', error: `Couldn't add product — ${error.message}` });
-        return null;
-      }
-      const { data, error: readError } = await supabase.from('products').select('*').eq('id', productId).single();
-      if (readError) { dispatch({ type: 'SET_ERROR', error: readError.message }); return null; }
-      dispatch({ type: 'UPSERT_PRODUCT', product: data as Product });
-      return data as Product;
-    },
-    []
-  );
-
-  const updateProduct = useCallback(async (product: Product) => {
-    const { error } = await supabase.rpc('update_catalog_product', { target_product_id: product.id, product_name: product.name,
-      product_sku: product.sku, product_category: product.category, product_description: product.description ?? '', low_threshold: product.low_stock_threshold });
-    if (error) { dispatch({ type: 'SET_ERROR', error: error.message }); return false; }
-    const { data } = await supabase.from('products').select('*').eq('id', product.id).single();
-    if (data) dispatch({ type: 'UPSERT_PRODUCT', product: data as Product }); return true;
-  }, []);
-
-  const removeProduct = useCallback(async (product: Product, reason: string) => {
-    const { error } = await supabase.rpc('remove_catalog_product', { target_product_id: product.id, reason });
-    if (error) { dispatch({ type: 'SET_ERROR', error: error.message }); return false; }
-    dispatch({ type: 'SET_PRODUCTS', products: state.serverProducts.filter(item => item.id !== product.id) }); return true;
-  }, [state.serverProducts]);
+  const products = useMemo(() => {
+    const deltaByProduct = Object.values(state.pending).reduce<Record<string, number>>((totals, mutation) => {
+      totals[mutation.productId] = (totals[mutation.productId] ?? 0) + mutation.delta;
+      return totals;
+    }, {});
+    return state.serverProducts.map((product) => ({
+      ...product,
+      current_stock: product.current_stock + (deltaByProduct[product.id] ?? 0),
+    }));
+  }, [state.pending, state.serverProducts]);
 
   const clearError = useCallback(() => dispatch({ type: 'SET_ERROR', error: null }), []);
-
-  const products: Product[] = state.serverProducts.map((p) =>
-    state.pendingDeltas[p.id]
-      ? { ...p, current_stock: p.current_stock + state.pendingDeltas[p.id] }
-      : p
-  );
-
   const syncState: SyncState = !isOnline ? 'offline' : inflight > 0 ? 'syncing' : 'online';
 
   return {
     products,
-    loading: state.loading,
+    loading: enabled && state.loading,
     error: state.error,
     clearError,
     syncState,
     adjustStock,
     addProduct,
-    updateProduct,
-    removeProduct,
+    reload: loadProducts,
   };
 }

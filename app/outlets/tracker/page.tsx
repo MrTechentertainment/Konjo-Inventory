@@ -9,6 +9,8 @@ import { OUTLET_TYPE_LABEL } from '@/lib/outlets';
 import { supabase } from '@/lib/supabaseClient';
 import { formatEAT } from '@/lib/time';
 import type { Outlet, OutletInventory, OutletOperationFeedRow, Product } from '@/lib/types';
+import { errorMessage } from '@/lib/async';
+import { isAdminProfile } from '@/lib/authz';
 
 export default function OutletTrackerPage() {
   const { profile } = useAuth();
@@ -19,20 +21,29 @@ export default function OutletTrackerPage() {
   const [feed, setFeed] = useState<OutletOperationFeedRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const authorized = profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN';
+  const authorized = isAdminProfile(profile);
 
   const load = useCallback(async () => {
     if (!authorized) return;
-    const [outletResult, productResult, inventoryResult, feedResult] = await Promise.all([
-      supabase.from('outlets').select('*').order('name'),
-      supabase.from('products').select('*').eq('is_active', true),
-      supabase.from('outlet_inventory').select('*'),
-      supabase.rpc('get_outlet_operations_feed', { row_limit: 200 }),
-    ]);
-    const queryError = outletResult.error ?? productResult.error ?? inventoryResult.error ?? feedResult.error;
-    if (queryError) setError(queryError.message);
-    else { setOutlets((outletResult.data as Outlet[]) ?? []); setProducts((productResult.data as Product[]) ?? []); setInventory((inventoryResult.data as OutletInventory[]) ?? []); setFeed((feedResult.data as OutletOperationFeedRow[]) ?? []); }
-    setLoading(false);
+    try {
+      const [outletResult, productResult, inventoryResult, feedResult] = await Promise.all([
+        supabase.from('outlets').select('*').eq('is_active', true).order('name'),
+        supabase.from('products').select('*').eq('is_active', true),
+        supabase.from('outlet_inventory').select('*'),
+        supabase.rpc('get_outlet_operations_feed', { row_limit: 200 }),
+      ]);
+      const queryError = outletResult.error ?? productResult.error ?? inventoryResult.error ?? feedResult.error;
+      if (queryError) throw queryError;
+      setOutlets((outletResult.data as Outlet[]) ?? []);
+      setProducts((productResult.data as Product[]) ?? []);
+      setInventory((inventoryResult.data as OutletInventory[]) ?? []);
+      setFeed((feedResult.data as OutletOperationFeedRow[]) ?? []);
+      setError(null);
+    } catch (caught) {
+      setError(errorMessage(caught, 'Could not load outlet operations.'));
+    } finally {
+      setLoading(false);
+    }
   }, [authorized]);
 
   useEffect(() => { if (!authorized) router.replace('/outlets'); else void load(); }, [authorized, load, router]);

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { memo } from 'react';
-import { Edit3, Minus, MoreVertical, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Minus, Plus, SlidersHorizontal } from 'lucide-react';
 import type { Product } from '@/lib/types';
 import { getProductAccent } from '@/lib/productAccent';
 
@@ -11,15 +11,12 @@ interface ProductCardProps {
   product: Product;
   onQuickAdjust: (product: Product, delta: number) => void;
   onOpenBatch: (product: Product) => void;
-  onEdit: (product: Product) => void;
-  onRemove: (product: Product) => void;
 }
 
-function ProductCard({ product, onQuickAdjust, onOpenBatch, onEdit, onRemove }: ProductCardProps) {
+function ProductCard({ product, onQuickAdjust, onOpenBatch }: ProductCardProps) {
   const accent = getProductAccent(product.name);
   const isLow = product.current_stock <= product.low_stock_threshold;
   const [pulseKey, setPulseKey] = useState(0);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   const bump = (delta: number) => {
     if (delta < 0 && product.current_stock <= 0) return;
@@ -49,14 +46,13 @@ function ProductCard({ product, onQuickAdjust, onOpenBatch, onEdit, onRemove }: 
         </div>
 
         <button
-          onClick={() => setMenuOpen(value => !value)}
-          aria-label={`Product options for ${product.name}`}
+          onClick={() => onOpenBatch(product)}
+          aria-label={`Batch adjust ${product.name}`}
           className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-konjo-cream/60 transition active:scale-90 active:bg-white/15"
         >
-          <MoreVertical size={13} strokeWidth={2.2} />
+          <SlidersHorizontal size={12.5} strokeWidth={2.2} />
         </button>
       </div>
-      {menuOpen && <div className="absolute right-3 top-11 z-20 w-44 rounded-xl border border-white/10 bg-konjo-charcoal-2 p-1 shadow-2xl"><button onClick={()=>{setMenuOpen(false);onOpenBatch(product)}} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[11px] text-konjo-cream/70"><SlidersHorizontal size={13}/>Stock in/out/correction</button><button onClick={()=>{setMenuOpen(false);onEdit(product)}} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[11px] text-konjo-cream/70"><Edit3 size={13}/>Edit Product Details</button><button onClick={()=>{setMenuOpen(false);onRemove(product)}} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[11px] text-konjo-red"><Trash2 size={13}/>Remove from Catalog</button></div>}
 
       <div className="relative mt-3 flex items-end justify-between">
         <div className="flex items-baseline gap-1.5">

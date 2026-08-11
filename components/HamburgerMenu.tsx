@@ -1,27 +1,35 @@
 'use client';
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { BarChart3, Building2, CircleDollarSign, Factory, LogOut, Menu, Settings, ShieldCheck, UsersRound, X } from 'lucide-react';
+import { Building2, CircleDollarSign, Factory, FileSpreadsheet, Gauge, LogOut, MapPinned, Menu, ReceiptText, ShieldCheck, UsersRound, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { isAdminProfile, isRootProfile } from '@/lib/authz';
+
+export const ROLE_MODAL_EVENT = 'konjo:open-role-management';
 
 export default function HamburgerMenu() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const { profile, logout } = useAuth();
-  const isAdmin = profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN';
-  const isRoot = profile?.username.toLowerCase() === 'natanim' && profile.role === 'SUPER_ADMIN';
+  const isAdmin = isAdminProfile(profile);
+  const isRoot = isRootProfile(profile);
 
   const links = [
-    ...(isAdmin ? [{ href: '/', label: 'Factory Inventory', icon: Factory }] : []),
+    ...(isAdmin ? [
+      { href: '/admin', label: 'Admin Dashboard', icon: Gauge },
+      { href: '/factory', label: 'Factory Inventory', icon: Factory },
+      { href: '/admin/outlets', label: 'Outlets Management', icon: MapPinned },
+    ] : []),
     { href: '/outlets', label: 'Outlets Portal', icon: Building2 },
-    ...(isAdmin ? [{ href: '/outlets/tracker', label: 'Outlet Operations Tracker', icon: ShieldCheck }] : []),
-    ...(isAdmin ? [{ href: '/admin/prices', label: 'Prices & Tax', icon: CircleDollarSign }] : []),
-    ...((isRoot || profile?.analytics_access) ? [{ href: '/analytics', label: 'Analytics', icon: BarChart3 }] : []),
-    { href: '/account', label: 'Account Management', icon: Settings },
-    ...(isRoot ? [{ href: '/admin/users', label: 'User Role Management', icon: UsersRound }] : []),
+    ...(isAdmin ? [
+      { href: '/outlets/tracker', label: 'Outlet Operations Tracker', icon: ShieldCheck },
+      { href: '/admin/pricing', label: 'Price & Taxes', icon: CircleDollarSign },
+      { href: '/admin/credit-sales', label: 'Operations Records', icon: ReceiptText },
+    ] : []),
+    ...(isRoot ? [{ href: '/admin/import', label: 'Data Import', icon: FileSpreadsheet }] : []),
   ];
 
   return (
@@ -41,6 +49,11 @@ export default function HamburgerMenu() {
                     <Icon size={17} />{label}
                   </Link>
                 ))}
+                {isRoot && (
+                  <button onClick={() => { setOpen(false); window.dispatchEvent(new Event(ROLE_MODAL_EVENT)); }} className="flex w-full items-center gap-3 rounded-xl border border-konjo-amber/25 bg-konjo-amber/10 px-3 py-3 text-left text-sm text-konjo-amber">
+                    <UsersRound size={17} />User Role Management
+                  </button>
+                )}
               </div>
               <button onClick={() => void logout()} className="mt-auto flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-sm text-konjo-cream/60"><LogOut size={17} />Sign out</button>
             </motion.nav>

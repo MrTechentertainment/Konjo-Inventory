@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 import { daysAgoISO } from './time';
 import type { InventoryTransactionWithProduct } from './types';
+import { errorMessage, withTimeout } from './async';
 
 const MAX_ROWS = 1000;
 
@@ -24,23 +25,21 @@ export function useAuditLedger(isOpen: boolean, days: number) {
     setLoading(true);
     setError(null);
 
-    (async () => {
-      const { data, error } = await supabase
-        .from('inventory_transactions')
-        .select('*, products ( name, sku )')
-        .gte('timestamp', daysAgoISO(days))
-        .order('timestamp', { ascending: false })
-        .limit(MAX_ROWS);
-
-      if (cancelled) return;
-      if (error) {
-        setError(error.message);
-        setLoading(false);
-        return;
+    const load = async () => {
+      try {
+        const result = await withTimeout(
+          async (signal) => await supabase.from('inventory_transactions').select('*, products ( name, sku )').gte('timestamp', daysAgoISO(days)).order('timestamp', { ascending: false }).limit(MAX_ROWS).abortSignal(signal),
+          'Loading the audit ledger'
+        );
+        if (result.error) throw result.error;
+        if (!cancelled) setRows((result.data as unknown as InventoryTransactionWithProduct[]) ?? []);
+      } catch (caught) {
+        if (!cancelled) setError(errorMessage(caught, 'Could not load the audit ledger.'));
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setRows((data as unknown as InventoryTransactionWithProduct[]) ?? []);
-      setLoading(false);
-    })();
+    };
+    void load();
 
     return () => {
       cancelled = true;
