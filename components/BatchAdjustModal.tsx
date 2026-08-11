@@ -61,11 +61,16 @@ function BatchAdjustModal({ product, staffName, onClose, onSubmit }: BatchAdjust
     }
 
     setSubmitting(true);
-    const ok = await onSubmit(quantity * effectiveSign, type, notes);
-    setSubmitting(false);
-    if (ok) {
-      reset();
-      onClose();
+    try {
+      const ok = await onSubmit(quantity * effectiveSign, type, notes);
+      if (ok) {
+        reset();
+        onClose();
+      }
+    } catch {
+      setFormError('The stock change did not save. Check the connection and try again.');
+    } finally {
+      setSubmitting(false);
     }
   };
 

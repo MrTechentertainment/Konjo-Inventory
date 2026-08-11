@@ -1,9 +1,11 @@
 'use client';
 
 import type { Session } from '@supabase/supabase-js';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { isSupabaseConfigured, supabase } from './supabaseClient';
 import type { UserProfile } from './types';
+import { errorMessage } from './async';
+import { usernameEmail } from './authz';
 
 interface AuthResult {
   ok: boolean;
@@ -18,24 +20,10 @@ interface AuthContextValue {
   login: (username: string, password: string) => Promise<AuthResult>;
   register: (username: string, password: string) => Promise<AuthResult>;
   logout: () => Promise<void>;
-  updatePassword: (password: string) => Promise<AuthResult>;
   refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-
-const ROOT_OWNER_EMAIL = 'natanim@konjo.com';
-
-function usernameEmail(username: string): string {
-  const normalizedUsername = username.trim().toLowerCase();
-
-  if (normalizedUsername === 'natanim') {
-    return ROOT_OWNER_EMAIL;
-  }
-
-  return `${normalizedUsername}@konjo.internal`;
-
-}
 
 function friendlyAuthError(message: string): string {
   if (/invalid login credentials/i.test(message)) return 'Incorrect username or password.';
@@ -48,25 +36,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const latestProfileRequest = useRef(0);
 
   const loadProfile = useCallback(async (activeSession?: Session | null) => {
-    const current = activeSession ?? (await supabase.auth.getSession()).data.session;
-    if (!current) {
-      setProfile(null);
-      return;
+    const requestId = ++latestProfileRequest.current;
+    try {
+      const current = activeSession === undefined ? (await supabase.auth.getSession()).data.session : activeSession;
+      if (!current) {
+        if (requestId === latestProfileRequest.current) setProfile(null);
+        return;
+      }
+      const { data, error } = await supabase.rpc('get_my_profile');
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (requestId === latestProfileRequest.current) setProfile((row as UserProfile | undefined) ?? null);
+    } catch (error) {
+      if (requestId === latestProfileRequest.current) setProfile(null);
+      throw error;
     }
-    const { data, error } = await supabase.rpc('get_my_profile');
-    if (error) throw error;
-    const row = Array.isArray(data) ? data[0] : data;
-    setProfile((row as UserProfile | undefined) ?? null);
   }, []);
 
   const refreshProfile = useCallback(async () => {
     try {
       await loadProfile(session);
-    } catch {
-      setProfile(null);
-    }
+    } catch {}
   }, [loadProfile, session]);
 
   useEffect(() => {
@@ -75,34 +68,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     let mounted = true;
-    void supabase.auth.getSession().then(async ({ data }) => {
-      if (!mounted) return;
-      setSession(data.session);
+    const initialize = async () => {
       try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        if (!mounted) return;
+        setSession(data.session);
         await loadProfile(data.session);
+      } catch {
+        if (mounted) {
+          setSession(null);
+          setProfile(null);
+        }
       } finally {
         if (mounted) setLoading(false);
       }
-    });
+    };
+    void initialize();
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (!mounted) return;
       setSession(nextSession);
       setLoading(true);
       window.setTimeout(() => {
-        void loadProfile(nextSession).finally(() => mounted && setLoading(false));
+        void loadProfile(nextSession).catch(() => undefined).finally(() => mounted && setLoading(false));
       }, 0);
     });
     return () => {
       mounted = false;
+      latestProfileRequest.current += 1;
       listener.subscription.unsubscribe();
     };
   }, [loadProfile]);
 
   const login = useCallback(async (username: string, password: string): Promise<AuthResult> => {
     if (!isSupabaseConfigured) return { ok: false, error: 'Supabase environment variables are missing.' };
-    const { error } = await supabase.auth.signInWithPassword({ email: usernameEmail(username), password });
-    return error ? { ok: false, error: friendlyAuthError(error.message) } : { ok: true };
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: usernameEmail(username), password });
+      return error ? { ok: false, error: friendlyAuthError(error.message) } : { ok: true };
+    } catch (error) {
+      return { ok: false, error: errorMessage(error, 'Could not reach the sign-in service.') };
+    }
   }, []);
 
   const register = useCallback(async (username: string, password: string): Promise<AuthResult> => {
@@ -112,39 +118,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, error: 'Use 3–32 letters, numbers, dots, dashes or underscores.' };
     }
     if (clean.toLowerCase() === 'natanim') return { ok: false, error: 'That username is reserved.' };
-    if (password.length < 6) return { ok: false, error: 'Password must contain at least 6 characters.' };
-    const { data, error } = await supabase.auth.signUp({
-      email: usernameEmail(clean),
-      password,
-      options: { data: { username: clean } },
-    });
-    if (error) return { ok: false, error: friendlyAuthError(error.message) };
-    if (!data.session) {
-      return { ok: false, error: 'Account created, but email confirmation is enabled. Disable it in Supabase Auth settings, then sign in.' };
+    const strong = password.length >= 12 && /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
+    if (!strong) {
+      return { ok: false, error: 'Use at least 12 characters with uppercase, lowercase, a number and a symbol.' };
     }
-    return { ok: true };
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: usernameEmail(clean),
+        password,
+        options: { data: { username: clean } },
+      });
+      if (error) return { ok: false, error: friendlyAuthError(error.message) };
+      if (!data.session) {
+        return { ok: false, error: 'Account created, but email confirmation is enabled. Disable it in Supabase Auth settings, then sign in.' };
+      }
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: errorMessage(error, 'Could not create the account.') };
+    }
   }, []);
 
   const logout = useCallback(async () => {
-    await supabase.auth.signOut();
-    setProfile(null);
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      setSession(null);
+      setProfile(null);
+    }
   }, []);
 
-  const updatePassword = useCallback(async (password: string): Promise<AuthResult> => {
-    if (password.length < 10 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password)) {
-      return { ok: false, error: 'Use at least 10 characters with uppercase, lowercase and a number.' };
-    }
-    const { error } = await supabase.auth.updateUser({ password });
-    if (error) return { ok: false, error: friendlyAuthError(error.message) };
-    const { error: profileError } = await supabase.rpc('complete_password_reset');
-    if (profileError) return { ok: false, error: profileError.message };
-    await loadProfile(session);
-    return { ok: true };
-  }, [loadProfile, session]);
-
   const value = useMemo<AuthContextValue>(
-    () => ({ session, profile, loading, configured: isSupabaseConfigured, login, register, logout, updatePassword, refreshProfile }),
-    [session, profile, loading, login, register, logout, updatePassword, refreshProfile]
+    () => ({ session, profile, loading, configured: isSupabaseConfigured, login, register, logout, refreshProfile }),
+    [session, profile, loading, login, register, logout, refreshProfile]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

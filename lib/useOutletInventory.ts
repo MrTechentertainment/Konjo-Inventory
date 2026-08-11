@@ -1,23 +1,49 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { errorMessage, isTransientError, newOperationId, withTimeout } from './async';
 import { supabase } from './supabaseClient';
-import type { DeliveryLineInput, DeliveryLogRow, Outlet, OutletInventory, PipelineStatus, PipelineSummary, Product } from './types';
+import type { Outlet, OutletInventory, Product } from './types';
+
+function firstInventoryRow(data: unknown): OutletInventory | null {
+  if (Array.isArray(data)) return (data[0] as OutletInventory | undefined) ?? null;
+  return (data as OutletInventory | null) ?? null;
+}
 
 export function useOutlets() {
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
     let active = true;
-    void supabase.from('outlets').select('*').order('type').order('name').then(({ data, error: queryError }) => {
-      if (!active) return;
-      setLoading(false);
-      if (queryError) setError(queryError.message);
-      else setOutlets((data as Outlet[]) ?? []);
-    });
-    return () => { active = false; };
+    const load = async () => {
+      try {
+        const result = await withTimeout(
+          async (signal) =>
+            await supabase
+              .from('outlets')
+              .select('*')
+              .eq('is_active', true)
+              .order('type')
+              .order('name')
+              .abortSignal(signal),
+          'Loading outlets'
+        );
+        if (result.error) throw result.error;
+        if (active) setOutlets((result.data as Outlet[]) ?? []);
+      } catch (caught) {
+        if (active) setError(errorMessage(caught, 'Could not load outlets.'));
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
   }, []);
+
   return { outlets, loading, error };
 }
 
@@ -26,75 +52,158 @@ export function useOutletInventory(outletId: string) {
   const [products, setProducts] = useState<Product[]>([]);
   const [inventory, setInventory] = useState<OutletInventory[]>([]);
   const [pending, setPending] = useState<Record<string, number>>({});
-  const [deliveryLogs, setDeliveryLogs] = useState<DeliveryLogRow[]>([]);
-  const [pipeline, setPipeline] = useState<PipelineSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const pendingRef = useRef<Record<string, number>>({});
+  const queues = useRef(new Map<string, Promise<void>>());
+
+  const upsertInventory = useCallback((row: OutletInventory) => {
+    setInventory((current) => {
+      const existing = current.find((item) => item.id === row.id);
+      if (existing && Number(existing.stock_revision ?? 0) > Number(row.stock_revision ?? 0)) return current;
+      return existing ? current.map((item) => (item.id === row.id ? row : item)) : [...current, row];
+    });
+  }, []);
 
   const load = useCallback(async () => {
-    const [outletResult, productsResult, inventoryResult, logsResult, pipelineResult] = await Promise.all([
-      supabase.from('outlets').select('*').eq('id', outletId).single(),
-      supabase.from('products').select('*').eq('is_active', true).order('category').order('name'),
-      supabase.from('outlet_inventory').select('*').eq('outlet_id', outletId),
-      supabase.rpc('get_delivery_logs', { target_outlet_id: outletId, row_limit: 100 }),
-      supabase.rpc('get_outlet_pipeline', { target_outlet_id: outletId }),
-    ]);
-    const queryError = outletResult.error ?? productsResult.error ?? inventoryResult.error ?? logsResult.error ?? pipelineResult.error;
-    if (queryError) setError(queryError.message);
-    else {
+    try {
+      const [outletResult, productsResult, inventoryResult] = await Promise.all([
+        withTimeout(
+          async (signal) => await supabase.from('outlets').select('*').eq('id', outletId).abortSignal(signal).single(),
+          'Loading outlet'
+        ),
+        withTimeout(
+          async (signal) =>
+            await supabase.from('products').select('*').eq('is_active', true).order('category').order('name').abortSignal(signal),
+          'Loading outlet products'
+        ),
+        withTimeout(
+          async (signal) => await supabase.from('outlet_inventory').select('*').eq('outlet_id', outletId).abortSignal(signal),
+          'Loading outlet stock'
+        ),
+      ]);
+      const queryError = outletResult.error ?? productsResult.error ?? inventoryResult.error;
+      if (queryError) throw queryError;
       setOutlet(outletResult.data as Outlet);
       setProducts((productsResult.data as Product[]) ?? []);
       setInventory((inventoryResult.data as OutletInventory[]) ?? []);
-      setDeliveryLogs((logsResult.data as DeliveryLogRow[]) ?? []);
-      setPipeline((pipelineResult.data as PipelineSummary[]) ?? []);
+      setError(null);
+    } catch (caught) {
+      setError(errorMessage(caught, 'Could not load this outlet.'));
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [outletId]);
-
-  useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
-    const channel = supabase.channel(`outlet-inventory-${outletId}`).on('postgres_changes', { event: '*', schema: 'public', table: 'outlet_inventory', filter: `outlet_id=eq.${outletId}` }, (payload) => {
-      if (payload.eventType === 'DELETE') return;
-      const row = payload.new as OutletInventory;
-      setInventory((current) => current.some((item) => item.id === row.id) ? current.map((item) => item.id === row.id ? row : item) : [...current, row]);
-    }).subscribe();
-    return () => { void supabase.removeChannel(channel); };
-  }, [outletId]);
+    void load();
+  }, [load]);
 
-  const stockByProduct = useMemo(() => Object.fromEntries(products.map((product) => {
-    const stored = inventory.find((row) => row.product_id === product.id)?.stock_bottles ?? 0;
-    return [product.id, stored + (pending[product.id] ?? 0)];
-  })), [products, inventory, pending]);
+  useEffect(() => {
+    const channel = supabase
+      .channel(`outlet-inventory-${outletId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'outlet_inventory', filter: `outlet_id=eq.${outletId}` },
+        (payload) => {
+          if (payload.eventType === 'DELETE') return;
+          const row = payload.new as OutletInventory;
+          if ((pendingRef.current[row.product_id] ?? 0) === 0) upsertInventory(row);
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [outletId, upsertInventory]);
 
-  const recordSale = useCallback(async (productId: string, quantity = 1) => {
-    if (!Number.isInteger(quantity) || quantity < 1) return false;
-    setPending((current) => ({ ...current, [productId]: (current[productId] ?? 0) - quantity }));
-    const { error: mutationError } = await supabase.rpc('record_outlet_sale', { target_outlet_id: outletId, target_product_id: productId, sold_quantity: quantity });
-    setPending((current) => {
-      const nextValue = (current[productId] ?? 0) + quantity;
-      const next = { ...current };
-      if (nextValue === 0) delete next[productId]; else next[productId] = nextValue;
-      return next;
-    });
-    if (mutationError) { setError(mutationError.message); return false; }
-    return true;
-  }, [outletId]);
+  const stockByProduct = useMemo(
+    () =>
+      Object.fromEntries(
+        products.map((product) => {
+          const stored = inventory.find((row) => row.product_id === product.id)?.stock_bottles ?? 0;
+          return [product.id, stored + (pending[product.id] ?? 0)];
+        })
+      ),
+    [products, inventory, pending]
+  );
 
-  const createDelivery = useCallback(async (items: DeliveryLineInput[], occurredAt: string, status: PipelineStatus = 'DELIVERED', notes = '') => {
-    const deltas = Object.fromEntries(items.map(item => [item.product_id, item.quantity * (item.unit === 'PACK' ? 15 : 1)]));
-    setPending(current => ({ ...current, ...Object.fromEntries(Object.entries(deltas).map(([id, delta]) => [id, (current[id] ?? 0) + delta])) }));
-    const { error: mutationError } = await supabase.rpc('create_delivery', { target_outlet_id: outletId, occurred_at: occurredAt, items, delivery_status: status, device_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, delivery_notes: notes || null });
-    setPending(current => { const next={...current}; for(const [id,delta] of Object.entries(deltas)){next[id]=(next[id]??0)-delta;if(next[id]===0)delete next[id];} return next; });
-    if (mutationError) { setError(mutationError.message); return false; }
-    await load(); return true;
-  }, [load, outletId]);
+  const logChange = useCallback(
+    async (productId: string, changeBottles: number) => {
+      if (!Number.isInteger(changeBottles) || changeBottles === 0) return false;
+      const operationId = newOperationId();
+      pendingRef.current[productId] = (pendingRef.current[productId] ?? 0) + changeBottles;
+      setPending((current) => ({ ...current, [productId]: (current[productId] ?? 0) + changeBottles }));
 
-  const createOrder = useCallback(async (items: DeliveryLineInput[], notes='') => {
-    const { error: mutationError } = await supabase.rpc('create_stock_order', { target_outlet_id: outletId, items, order_notes: notes || null });
-    if (mutationError) { setError(mutationError.message); return false; }
-    await load(); return true;
-  }, [load, outletId]);
+      const previous = queues.current.get(productId) ?? Promise.resolve();
+      let queueMarker: Promise<void>;
+      const task = previous
+        .catch(() => undefined)
+        .then(async () => {
+          try {
+            const call = async () => {
+              const result = await withTimeout(
+                async (signal) =>
+                  await supabase
+                    .rpc('log_outlet_change_v2', {
+                      target_outlet_id: outletId,
+                      target_product_id: productId,
+                      bottle_change: changeBottles,
+                      p_operation_id: operationId,
+                    })
+                    .abortSignal(signal),
+                'Saving outlet stock'
+              );
+              if (result.error) throw result.error;
+              return result;
+            };
+            let result;
+            try {
+              result = await call();
+            } catch (caught) {
+              if (!isTransientError(caught)) throw caught;
+              result = await call();
+            }
+            const confirmed = firstInventoryRow(result.data);
+            if (!confirmed) throw new Error('Supabase did not return the updated outlet stock.');
+            upsertInventory(confirmed);
+            return true;
+          } catch (caught) {
+            setError(errorMessage(caught, 'The outlet stock change did not save.'));
+            return false;
+          } finally {
+            pendingRef.current[productId] = (pendingRef.current[productId] ?? 0) - changeBottles;
+            if (pendingRef.current[productId] === 0) delete pendingRef.current[productId];
+            setPending((current) => {
+              const nextValue = (current[productId] ?? 0) - changeBottles;
+              const next = { ...current };
+              if (nextValue === 0) delete next[productId];
+              else next[productId] = nextValue;
+              return next;
+            });
+          }
+        });
 
-  return { outlet, products, stockByProduct, deliveryLogs, pipeline, loading, error, clearError: () => setError(null), recordSale, createDelivery, createOrder, reload: load };
+      queueMarker = task.then(() => undefined, () => undefined);
+      queues.current.set(productId, queueMarker);
+      void queueMarker.finally(() => {
+        if (queues.current.get(productId) === queueMarker) {
+          queues.current.delete(productId);
+          void load();
+        }
+      });
+      return task;
+    },
+    [load, outletId, upsertInventory]
+  );
+
+  return {
+    outlet,
+    products,
+    stockByProduct,
+    loading,
+    error,
+    clearError: () => setError(null),
+    logChange,
+  };
 }

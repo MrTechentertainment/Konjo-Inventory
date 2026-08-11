@@ -6,8 +6,9 @@ import { Crown, Shield, UserRound, X } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
 import type { UserProfile, UserRole } from '@/lib/types';
-// Define the event constant locally instead of importing a missing member
-const ROLE_MODAL_EVENT = 'open-role-management-modal';
+import { ROLE_MODAL_EVENT } from './HamburgerMenu';
+import { isRootProfile, ROOT_OWNER_ID } from '@/lib/authz';
+import { errorMessage, withTimeout } from '@/lib/async';
 
 function RoleManagementModal() {
   const { profile } = useAuth();
@@ -16,15 +17,21 @@ function RoleManagementModal() {
   const [loading, setLoading] = useState(false);
   const [workingId, setWorkingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const authorized = profile?.username.toLowerCase() === 'natanim' && profile.role === 'SUPER_ADMIN';
+  const authorized = isRootProfile(profile);
 
   const loadUsers = useCallback(async () => {
     if (!authorized) return;
     setLoading(true);
-    const { data, error: queryError } = await supabase.rpc('list_user_profiles');
-    setLoading(false);
-    if (queryError) setError(queryError.message);
-    else setUsers((data as UserProfile[]) ?? []);
+    try {
+      const result = await withTimeout(async (signal) => await supabase.rpc('list_user_profiles').abortSignal(signal), 'Loading users');
+      if (result.error) throw result.error;
+      setUsers((result.data as UserProfile[]) ?? []);
+      setError(null);
+    } catch (caught) {
+      setError(errorMessage(caught, 'Could not load users.'));
+    } finally {
+      setLoading(false);
+    }
   }, [authorized]);
 
   useEffect(() => {
@@ -34,13 +41,18 @@ function RoleManagementModal() {
   }, [authorized, loadUsers]);
 
   const changeRole = async (user: UserProfile, role: Extract<UserRole, 'ADMIN' | 'BASIC'>) => {
-    if (user.username.toLowerCase() === 'natanim') return;
+    if (user.id === ROOT_OWNER_ID) return;
     setWorkingId(user.id);
     setError(null);
-    const { error: mutationError } = await supabase.rpc('set_user_role', { target_user_id: user.id, new_role: role });
-    setWorkingId(null);
-    if (mutationError) setError(mutationError.message);
-    else await loadUsers();
+    try {
+      const result = await withTimeout(async (signal) => await supabase.rpc('set_user_role', { target_user_id: user.id, new_role: role }).abortSignal(signal), 'Changing user role');
+      if (result.error) throw result.error;
+      await loadUsers();
+    } catch (caught) {
+      setError(errorMessage(caught, 'The role did not save.'));
+    } finally {
+      setWorkingId(null);
+    }
   };
 
   if (!authorized) return null;
@@ -57,7 +69,7 @@ function RoleManagementModal() {
               {loading && <p className="py-8 text-center text-xs text-konjo-cream/40">Loading users…</p>}
               {error && <p className="rounded-xl bg-konjo-red/10 p-3 text-xs text-konjo-red">{error}</p>}
               {users.map((user) => {
-                const isProtected = user.username.toLowerCase() === 'natanim';
+                const isProtected = user.id === ROOT_OWNER_ID;
                 return (
                   <div key={user.id} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
                     <span className={`flex h-9 w-9 items-center justify-center rounded-full ${isProtected ? 'bg-konjo-amber/15 text-konjo-amber' : 'bg-white/5 text-konjo-cream/50'}`}>{isProtected ? <Crown size={16} /> : user.role === 'ADMIN' ? <Shield size={16} /> : <UserRound size={16} />}</span>

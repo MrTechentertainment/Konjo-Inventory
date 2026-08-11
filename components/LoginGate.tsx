@@ -25,10 +25,15 @@ export default function LoginGate() {
     }
     setSubmitting(true);
     setError(null);
-    const result = mode === 'login' ? await login(username, password) : await register(username, password);
-    setSubmitting(false);
-    if (!result.ok) setError(result.error ?? 'Authentication failed.');
-    else router.replace('/');
+    try {
+      const result = mode === 'login' ? await login(username, password) : await register(username, password);
+      if (!result.ok) setError(result.error ?? 'Authentication failed.');
+      else router.replace('/');
+    } catch {
+      setError('The request failed unexpectedly. Check the connection and try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -86,7 +91,7 @@ export default function LoginGate() {
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 className="min-w-0 flex-1 bg-transparent text-sm text-konjo-cream placeholder:text-konjo-cream/25 focus:outline-none"
-                placeholder={mode === 'register' ? 'At least 6 characters' : 'Password'}
+                placeholder={mode === 'register' ? '12+ strong characters' : 'Password'}
               />
               <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label="Show or hide password" className="text-konjo-cream/40">
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}

@@ -3,17 +3,16 @@
 import { memo, useMemo, useState } from 'react';
 import { Minus, PackagePlus } from 'lucide-react';
 import { BOTTLES_PER_PACK, packsToBottles } from '@/lib/outlets';
-import type { DeliveryLineInput, Outlet, Product } from '@/lib/types';
+import type { Outlet, Product } from '@/lib/types';
 
 interface Props {
   outlet: Outlet;
   products: Product[];
   stockByProduct: Record<string, number>;
-  onCreateDelivery: (items: DeliveryLineInput[], occurredAt: string) => Promise<boolean>;
-  onRecordSale: (productId: string, quantity?: number) => Promise<boolean>;
+  onLogChange: (productId: string, changeBottles: number) => Promise<boolean>;
 }
 
-function BazaarSalesTracker({ outlet, products, stockByProduct, onCreateDelivery, onRecordSale }: Props) {
+function BazaarSalesTracker({ outlet, products, stockByProduct, onLogChange }: Props) {
   const [productId, setProductId] = useState(products[0]?.id ?? '');
   const [packs, setPacks] = useState(1);
   const [submitting, setSubmitting] = useState(false);
@@ -22,9 +21,12 @@ function BazaarSalesTracker({ outlet, products, stockByProduct, onCreateDelivery
   const addInitialStock = async () => {
     if (!productId || bottleTotal < 1) return;
     setSubmitting(true);
-    const ok = await onCreateDelivery([{ product_id: productId, quantity: packs, unit: 'PACK' }], new Date().toISOString());
-    setSubmitting(false);
-    if (ok) setPacks(1);
+    try {
+      const ok = await onLogChange(productId, bottleTotal);
+      if (ok) setPacks(1);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -53,7 +55,7 @@ function BazaarSalesTracker({ outlet, products, stockByProduct, onCreateDelivery
               <p className="min-h-9 text-xs font-semibold leading-tight text-konjo-cream">{product.name}</p>
               <p className="mt-2 font-display text-3xl font-bold tabular-nums text-konjo-cream">{stock}</p>
               <p className="text-[10px] text-konjo-cream/35">bottles remaining</p>
-              <button disabled={stock < 1} onClick={() => void onRecordSale(product.id, 1)} aria-label={`Sell one ${product.name}`} className="mt-3 flex h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-xl bg-konjo-red text-sm font-bold text-white shadow-md shadow-konjo-red/20 transition active:scale-90 disabled:bg-white/5 disabled:text-konjo-cream/25 disabled:shadow-none"><Minus size={19} strokeWidth={3} />1 bottle</button>
+              <button disabled={stock < 1} onClick={() => void onLogChange(product.id, -1)} aria-label={`Sell one ${product.name}`} className="mt-3 flex h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-xl bg-konjo-red text-sm font-bold text-white shadow-md shadow-konjo-red/20 transition active:scale-90 disabled:bg-white/5 disabled:text-konjo-cream/25 disabled:shadow-none"><Minus size={19} strokeWidth={3} />1 bottle</button>
             </article>
           );
         })}

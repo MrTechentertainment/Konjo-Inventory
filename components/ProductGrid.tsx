@@ -10,11 +10,9 @@ interface ProductGridProps {
   products: Product[];
   onQuickAdjust: (product: Product, delta: number) => void;
   onOpenBatch: (product: Product) => void;
-  onEdit: (product: Product) => void;
-  onRemove: (product: Product) => void;
 }
 
-export default function ProductGrid({ products, onQuickAdjust, onOpenBatch, onEdit, onRemove }: ProductGridProps) {
+export default function ProductGrid({ products, onQuickAdjust, onOpenBatch }: ProductGridProps) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string | 'All'>('All');
 
@@ -72,7 +70,7 @@ export default function ProductGrid({ products, onQuickAdjust, onOpenBatch, onEd
           <AnimatePresence initial={false} mode="popLayout">
             {filtered.map((product) => (
               <motion.div key={product.id} layout="position" exit={{ opacity: 0 }}>
-                <ProductCard product={product} onQuickAdjust={onQuickAdjust} onOpenBatch={onOpenBatch} onEdit={onEdit} onRemove={onRemove} />
+                <ProductCard product={product} onQuickAdjust={onQuickAdjust} onOpenBatch={onOpenBatch} />
               </motion.div>
             ))}
           </AnimatePresence>

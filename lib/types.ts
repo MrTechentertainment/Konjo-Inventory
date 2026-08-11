@@ -7,10 +7,22 @@ export interface Product {
   current_stock: number;
   category: string;
   low_stock_threshold: number;
+  unit_price_etb: number;
+  tax_rate: number;
+  stock_revision: number;
   is_active: boolean;
-  description: string | null;
-  updated_at?: string;
   created_at: string;
+  updated_at: string;
+}
+
+export interface ProductCreateInput {
+  name: string;
+  sku: string;
+  category: string;
+  current_stock: number;
+  low_stock_threshold: number;
+  unit_price_etb: number;
+  tax_rate: number;
 }
 
 export interface InventoryTransaction {
@@ -20,6 +32,7 @@ export interface InventoryTransaction {
   transaction_type: TransactionType;
   notes: string | null;
   logged_by: string;
+  operation_id: string | null;
   timestamp: string;
 }
 
@@ -36,11 +49,7 @@ export type OutletType = 'SUPERMARKET' | 'BAZAAR' | 'EVENT' | 'GIFT' | 'SAMPLE';
 export interface UserProfile {
   id: string;
   username: string;
-  display_name: string;
-  avatar_url: string | null;
   role: UserRole;
-  must_reset_password: boolean;
-  analytics_access: boolean;
   created_at: string;
 }
 
@@ -48,79 +57,12 @@ export interface Outlet {
   id: string;
   name: string;
   type: OutletType;
-  created_by: string | null;
-  creator_name?: string | null;
-  exception_flag: boolean;
-  exception_note: string | null;
-  deleted_at: string | null;
+  address: string | null;
+  subcity: string | null;
+  source_key: string | null;
+  is_active: boolean;
   created_at: string;
-}
-
-export type QuantityUnit = 'BOTTLE' | 'PACK';
-export type PipelineStatus = 'DELIVERED' | 'PENDING_ORDER' | 'WAITING_CONFIRMATION' | 'PAID' | 'CONSIGNMENT';
-
-export interface ProductPrice {
-  id: string;
-  product_id: string;
-  product_name?: string;
-  product_sku?: string;
-  pack_size: number;
-  tax_rate: number;
-  bottle_price_before_tax: number;
-  bottle_price_after_tax: number;
-  pack_price_before_tax: number;
-  pack_price_after_tax: number;
-  effective_from: string;
-  effective_to: string | null;
-  version: number;
-}
-
-export interface DeliveryLineInput {
-  product_id: string;
-  quantity: number;
-  unit: QuantityUnit;
-}
-
-export interface OutletDuplicate {
-  id: string;
-  name: string;
-  created_by_name: string;
-}
-
-export interface DeliveryLogRow {
-  id: string;
-  batch_id: string;
-  product_id: string;
-  product_name: string;
-  quantity: number;
-  unit: QuantityUnit;
-  quantity_bottles: number;
-  occurred_at: string;
-  recorded_at: string;
-  status: PipelineStatus;
-  recorded_by_name: string;
-}
-
-export interface PipelineSummary {
-  status: PipelineStatus;
-  item_count: number;
-  bottle_count: number;
-  amount_after_tax: number;
-}
-
-export interface MonthlyAnalytics {
-  total_current_inventory: number;
-  outlet_inventory: number;
-  total_sales_volume: number;
-  pending_sales: number;
-  projected_sales: number;
-  gross_revenue: number;
-  net_revenue: number;
-  total_tax_liability: number;
-  outstanding_orders: number;
-  active_outlets: number;
-  low_stock_products: number;
-  inventory_turnover: number;
+  updated_at: string;
 }
 
 export interface OutletInventory {
@@ -128,6 +70,32 @@ export interface OutletInventory {
   outlet_id: string;
   product_id: string;
   stock_bottles: number;
+  stock_revision: number;
+  updated_at: string;
+}
+
+export interface CreditSale {
+  id: string;
+  external_key: string;
+  outlet_id: string;
+  legacy_reference: string | null;
+  payment_status: 'PAID' | 'UNPAID' | 'UNKNOWN';
+  total_price: number | null;
+  total_price_raw: string | null;
+  refilled_date: string | null;
+  refilled_date_raw: string | null;
+  due_date: string | null;
+  due_date_raw: string | null;
+  payment_date: string | null;
+  payment_date_raw: string | null;
+  bottle_price_raw: string | null;
+  agreement_period: string | null;
+  payment_type: string | null;
+  notes: string | null;
+  sales_representative: string | null;
+  source_name: string;
+  source_row: number;
+  imported_at: string;
   updated_at: string;
 }
 

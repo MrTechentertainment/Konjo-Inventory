@@ -28,7 +28,6 @@ function AnimatedNumber({ value }: { value: number }) {
     raf = requestAnimationFrame(tick);
     prevValue.current = value;
     return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, inView]);
 
   return (
