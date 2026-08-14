@@ -3,17 +3,21 @@
 import dynamic from 'next/dynamic';
 import { ArrowLeft, PackagePlus } from 'lucide-react';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import BazaarSalesTracker from '@/components/BazaarSalesTracker';
 import ErrorToast from '@/components/ErrorToast';
 import Header from '@/components/Header';
+import OutletAnalyticsDashboard from '@/components/OutletAnalyticsDashboard';
 import { BOTTLES_PER_PACK, OUTLET_TYPE_LABEL } from '@/lib/outlets';
 import { useOutletInventory } from '@/lib/useOutletInventory';
 
 const SupermarketDeliveryModal = dynamic(() => import('@/components/SupermarketDeliveryModal'), { ssr: false });
 
-export default function OutletWorkspacePage({ params }: { params: { outletId: string } }) {
-  const { outlet, products, stockByProduct, loading, error, clearError, logChange } = useOutletInventory(params.outletId);
+export default function OutletWorkspacePage() {
+  const params = useParams<{ outletId: string }>();
+  const outletId = params.outletId;
+  const { outlet, products, stockByProduct, loading, error, clearError, logChange } = useOutletInventory(outletId);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
 
   const deliver = async (entries: { productId: string; bottles: number }[]) => {
@@ -22,7 +26,7 @@ export default function OutletWorkspacePage({ params }: { params: { outletId: st
   };
 
   if (loading) return <div className="flex min-h-dvh items-center justify-center bg-konjo-charcoal"><div className="h-6 w-6 animate-spin rounded-full border-2 border-white/15 border-t-konjo-red" /></div>;
-  if (!outlet) return <div className="min-h-dvh bg-konjo-charcoal p-6 text-konjo-cream"><p>Outlet not found.</p><Link href="/outlets" className="mt-4 inline-block text-konjo-red">Back to outlets</Link></div>;
+  if (!outlet) return <div className="min-h-dvh bg-konjo-charcoal p-6 text-konjo-cream"><p>{error || 'Outlet not found.'}</p><Link href="/outlets" className="mt-4 inline-block text-konjo-red">Back to outlets</Link></div>;
 
   return (
     <div className="min-h-dvh bg-konjo-charcoal">
@@ -37,6 +41,7 @@ export default function OutletWorkspacePage({ params }: { params: { outletId: st
             </div>
           </div>
         ) : <BazaarSalesTracker outlet={outlet} products={products} stockByProduct={stockByProduct} onLogChange={logChange} />}
+        <OutletAnalyticsDashboard outlet={outlet} products={products} stockByProduct={stockByProduct} />
       </main>
       <SupermarketDeliveryModal open={deliveryOpen} products={products} onClose={() => setDeliveryOpen(false)} onDeliver={deliver} />
       <ErrorToast message={error} onDismiss={clearError} />

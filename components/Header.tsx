@@ -2,8 +2,9 @@
 
 import dynamic from 'next/dynamic';
 import { ClipboardList, Plus } from 'lucide-react';
+import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
-import { isRootProfile } from '@/lib/authz';
+import { isAdminProfile, isRootProfile } from '@/lib/authz';
 import type { SyncState } from '@/lib/types';
 import BrandLogo from './BrandLogo';
 import HamburgerMenu from './HamburgerMenu';
@@ -24,16 +25,22 @@ const ROLE_LABEL = { SUPER_ADMIN: 'Root Owner', ADMIN: 'Admin', BASIC: 'Field Sa
 export default function Header({ syncState, title = 'KONJO Inventory', subtitle = 'Addis Ababa operations', onOpenAudit, onOpenAddProduct }: HeaderProps) {
   const { profile } = useAuth();
   const canManageRoles = isRootProfile(profile);
+  const homeHref = isAdminProfile(profile) ? '/admin' : '/outlets';
+  const homeLabel = isAdminProfile(profile) ? 'Return to Admin Dashboard' : 'Return to Outlets Portal';
   return (
     <header className="sticky top-0 z-30 border-b border-white/10 bg-konjo-charcoal/90 backdrop-blur-lg">
       <div className="bg-mitmita-glow pointer-events-none absolute inset-x-0 top-0 h-28 opacity-60" />
       <div className="relative mx-auto max-w-4xl px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">
-            <BrandLogo size={40} />
+            <Link href={homeHref} aria-label={homeLabel} title={homeLabel} className="shrink-0 rounded-xl transition active:scale-95">
+              <BrandLogo size={40} />
+            </Link>
             <div className="min-w-0 leading-tight">
               <div className="flex items-center gap-1.5">
-                <p className="truncate font-display text-sm font-semibold text-konjo-cream">{profile?.username}</p>
+                <Link href={homeHref} title={homeLabel} className="truncate font-display text-sm font-semibold text-konjo-cream transition hover:text-white">
+                  {profile?.username}
+                </Link>
                 {profile && <span className="shrink-0 rounded-full border border-konjo-amber/25 bg-konjo-amber/10 px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-wide text-konjo-amber">{ROLE_LABEL[profile.role]}</span>}
               </div>
               <p className="truncate text-[10.5px] text-konjo-cream/45">{title} · {subtitle}</p>

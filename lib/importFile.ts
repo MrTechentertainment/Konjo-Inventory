@@ -9,6 +9,7 @@ export interface CreditImportItem {
 }
 
 export interface CreditImportRow {
+  source_workbook: string;
   external_key: string;
   legacy_reference: string | null;
   supermarket: string | null;
@@ -34,6 +35,7 @@ export interface CreditImportRow {
 }
 
 export interface InventoryImportRow {
+  source_workbook: string;
   product_sku: string | null;
   product_name: string | null;
   target_quantity: number | null;
@@ -53,9 +55,18 @@ export interface ImportParseSummary {
   sheetNames: string[];
   warnings: string[];
   draftRows: number;
+  issues: ImportParseIssue[];
+}
+
+export interface ImportParseIssue {
+  workbook: string;
+  sheet: string;
+  row: number;
+  messages: string[];
 }
 
 interface SourceMatrix {
+  workbookName: string;
   sheetName: string;
   rows: unknown[][];
 }
@@ -80,7 +91,7 @@ const MAX_FILE_BYTES = 15 * 1024 * 1024;
 const MAX_ROWS = 5000;
 
 function normalizeHeader(value: unknown): string {
-  return text(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return text(value).toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 
 function text(value: unknown): string {
@@ -117,8 +128,11 @@ function positiveInteger(value: unknown): number | null {
 }
 
 function findHeader(headers: unknown[], aliases: readonly string[]): number {
-  const wanted = new Set(aliases.map(normalizeHeader));
-  return headers.findIndex((header) => wanted.has(normalizeHeader(header)));
+  const wanted = new Set(aliases.map(normalizeHeader).filter(Boolean));
+  return headers.findIndex((header) => {
+    const normalized = normalizeHeader(header);
+    return Boolean(normalized) && wanted.has(normalized);
+  });
 }
 
 function rawRow(headers: unknown[], row: unknown[]): Record<string, string> {
@@ -139,9 +153,12 @@ function rowHasValue(row: unknown[]): boolean {
 function findBestHeaderRow(rows: unknown[][], aliases: readonly string[]): number {
   let bestIndex = -1;
   let bestScore = 0;
-  const wanted = new Set(aliases.map(normalizeHeader));
+  const wanted = new Set(aliases.map(normalizeHeader).filter(Boolean));
   rows.slice(0, 25).forEach((row, index) => {
-    const score = row.reduce<number>((sum, cell) => sum + (wanted.has(normalizeHeader(cell)) ? 1 : 0), 0);
+    const score = row.reduce<number>((sum, cell) => {
+      const normalized = normalizeHeader(cell);
+      return sum + (normalized && wanted.has(normalized) ? 1 : 0);
+    }, 0);
     if (score > bestScore) {
       bestScore = score;
       bestIndex = index;
@@ -157,7 +174,7 @@ async function csvMatrices(file: File): Promise<SourceMatrix[]> {
       complete: (result: ParseResult<string[]>) => {
         const fatal = result.errors.find((error) => error.code === 'MissingQuotes' || error.code === 'UndetectableDelimiter');
         if (fatal) reject(new Error(`CSV parsing failed: ${fatal.message}`));
-        else resolve([{ sheetName: file.name.replace(/\.csv$/i, ''), rows: result.data }]);
+        else resolve([{ workbookName: file.name, sheetName: file.name.replace(/\.csv$/i, ''), rows: result.data }]);
       },
       error: reject,
     });
@@ -166,7 +183,7 @@ async function csvMatrices(file: File): Promise<SourceMatrix[]> {
 
 async function xlsxMatrices(file: File): Promise<SourceMatrix[]> {
   const sheets = await readXlsxFile(file);
-  return sheets.map((sheet) => ({ sheetName: sheet.sheet, rows: sheet.data as CellValue[][] }));
+  return sheets.map((sheet) => ({ workbookName: file.name, sheetName: sheet.sheet, rows: sheet.data as CellValue[][] }));
 }
 
 async function pdfMatrices(file: File): Promise<SourceMatrix[]> {
@@ -217,7 +234,7 @@ async function pdfMatrices(file: File): Promise<SourceMatrix[]> {
         return cells;
       })
       .filter(rowHasValue);
-    matrices.push({ sheetName: `PDF page ${pageNumber}`, rows });
+    matrices.push({ workbookName: file.name, sheetName: `PDF page ${pageNumber}`, rows });
   }
 
   if (extractedCharacters < 20) {
@@ -244,7 +261,7 @@ function inventoryRowsFromMatrix(matrix: SourceMatrix, warnings: string[]): Inve
   ];
   const headerIndex = findBestHeaderRow(matrix.rows, aliases);
   if (headerIndex < 0) {
-    warnings.push(`${matrix.sheetName}: no recognizable inventory header was found; this sheet/page was not imported.`);
+    warnings.push(`${matrix.workbookName} › ${matrix.sheetName}: no recognizable inventory header was found; this sheet/page was not imported.`);
     return [];
   }
   const headers = matrix.rows[headerIndex];
@@ -270,10 +287,11 @@ function inventoryRowsFromMatrix(matrix: SourceMatrix, warnings: string[]): Inve
       .filter(({ row }) => stockColumns.some((product) => text(row[product.index])));
     const latest = candidateRows.at(-1);
     if (!latest) return [];
-    warnings.push(`${matrix.sheetName}: recognized a wide stock ledger and selected its last populated stock row (${latest.sourceRow}) as the snapshot. Earlier movement rows were not applied to live stock.`);
+    warnings.push(`${matrix.workbookName} › ${matrix.sheetName}: recognized a wide stock ledger and selected its last populated stock row (${latest.sourceRow}) as the snapshot. Earlier movement rows were not applied to live stock.`);
     stockColumns.forEach((product) => {
       const cellValue = latest.row[product.index];
       result.push({
+        source_workbook: matrix.workbookName,
         product_sku: product.sku,
         product_name: null,
         target_quantity: nonNegativeInteger(cellValue),
@@ -296,6 +314,7 @@ function inventoryRowsFromMatrix(matrix: SourceMatrix, warnings: string[]): Inve
     const typeRaw = columns.locationType >= 0 ? normalizeHeader(row[columns.locationType]) : '';
     const locationType: InventoryImportRow['location_type'] = typeRaw.includes('outlet') || typeRaw.includes('branch') || Boolean(outletName) ? 'OUTLET' : 'FACTORY';
     const base = {
+      source_workbook: matrix.workbookName,
       location_type: locationType,
       outlet_name: outletName,
       address: columns.address >= 0 ? nullable(row[columns.address]) : null,
@@ -333,7 +352,7 @@ function creditRowsFromMatrix(matrix: SourceMatrix, warnings: string[]): CreditI
   const aliases = ['Column 1', 'Reference', 'ID', 'Supermarket', 'Outlet', 'Customer', 'Payment Status', 'Total Price', 'Refilled Date', 'Sale Date', ...PRODUCT_COLUMNS.flatMap((product) => product.aliases)];
   const headerIndex = findBestHeaderRow(matrix.rows, aliases);
   if (headerIndex < 0) {
-    warnings.push(`${matrix.sheetName}: no recognizable credit-sales header was found; this sheet/page was not imported.`);
+    warnings.push(`${matrix.workbookName} › ${matrix.sheetName}: no recognizable credit-sales header was found; this sheet/page was not imported.`);
     return [];
   }
   const headers = matrix.rows[headerIndex];
@@ -356,10 +375,13 @@ function creditRowsFromMatrix(matrix: SourceMatrix, warnings: string[]): CreditI
     representative: findHeader(headers, ['Sales Representative', 'Representative']),
   };
   const productColumns = PRODUCT_COLUMNS.map((product) => ({ ...product, index: findHeader(headers, product.aliases) })).filter((product) => product.index >= 0);
+  const creditSpecificColumn = findHeader(headers, ['Payment Status', 'Total Price', 'Refilled Date', 'When to be paid', 'Payment date', 'Bottle price', 'Agreement Period', 'Payment Type']);
+  if (creditSpecificColumn < 0) return [];
   const rows: CreditImportRow[] = [];
 
   matrix.rows.slice(headerIndex + 1).forEach((row, offset) => {
-    if (!rowHasValue(row)) return;
+    const recordColumns = [columns.reference, columns.supermarket, columns.address, columns.subcity, columns.total, columns.refilledDate, columns.dueDate, columns.paymentDate, columns.extraNote, columns.note, ...productColumns.map((product) => product.index)].filter((index) => index >= 0);
+    if (!recordColumns.some((index) => Boolean(text(row[index])))) return;
     const sourceRow = headerIndex + offset + 2;
     const supermarket = columns.supermarket >= 0 ? nullable(row[columns.supermarket]) : null;
     const rawTotal = columns.total >= 0 ? nullable(row[columns.total]) : null;
@@ -383,7 +405,8 @@ function creditRowsFromMatrix(matrix: SourceMatrix, warnings: string[]): CreditI
     const type = ({ cash: 'CASH', credit: 'CREDIT', consinment: 'CONSIGNMENT', consignment: 'CONSIGNMENT', check: 'CHEQUE', cheque: 'CHEQUE' } as Record<string, string>)[typeRaw] ?? (typeRaw ? typeRaw.toUpperCase() : null);
     const noteParts = [columns.extraNote >= 0 ? nullable(row[columns.extraNote]) : null, columns.note >= 0 ? nullable(row[columns.note]) : null].filter((value): value is string => Boolean(value));
     rows.push({
-      external_key: `upload:${matrix.sheetName}:${sourceRow}`,
+      source_workbook: matrix.workbookName,
+      external_key: `upload:${matrix.workbookName}:${matrix.sheetName}:${sourceRow}`,
       legacy_reference: columns.reference >= 0 ? nullable(row[columns.reference]) : null,
       supermarket,
       address: columns.address >= 0 ? nullable(row[columns.address]) : null,
@@ -410,6 +433,46 @@ function creditRowsFromMatrix(matrix: SourceMatrix, warnings: string[]): CreditI
   return rows;
 }
 
+function orderIssuesFromMatrix(matrix: SourceMatrix): ImportParseIssue[] {
+  const aliases = [
+    'N0', 'NO', 'Reference', 'ID', 'Supermarket', 'Outlet', 'Address', 'Status',
+    'Order date', 'Delivery date', 'Remark', 'Notes',
+    ...PRODUCT_COLUMNS.flatMap((product) => product.aliases),
+  ];
+  const headerIndex = findBestHeaderRow(matrix.rows, aliases);
+  if (headerIndex < 0) return [];
+  const headers = matrix.rows[headerIndex];
+  const outlet = findHeader(headers, ['Supermarket', 'Outlet', 'Customer']);
+  const orderDate = findHeader(headers, ['Order date', 'Order Date', 'Date ordered']);
+  const deliveryDate = findHeader(headers, ['Delivery date', 'Delivery Date', 'Date delivered']);
+  const status = findHeader(headers, ['Status', 'Delivery status']);
+  if (status < 0 || (orderDate < 0 && deliveryDate < 0)) return [];
+  const reference = findHeader(headers, ['N0', 'NO', 'Reference', 'ID']);
+  const address = findHeader(headers, ['Address', 'Adress']);
+  const notes = findHeader(headers, ['Remark', 'Remarks', 'Note', 'Notes']);
+  const productColumns = PRODUCT_COLUMNS
+    .map((product) => ({ ...product, index: findHeader(headers, product.aliases) }))
+    .filter((product) => product.index >= 0);
+  const businessColumns = [reference, outlet, address, orderDate, deliveryDate, notes, ...productColumns.map((product) => product.index)]
+    .filter((index) => index >= 0);
+  const issues: ImportParseIssue[] = [];
+
+  matrix.rows.slice(headerIndex + 1).forEach((row, offset) => {
+    if (!businessColumns.some((index) => Boolean(text(row[index])))) return;
+    const messages: string[] = [];
+    if (outlet < 0 || !nullable(row[outlet])) messages.push('Outlet name missing');
+    if (orderDate < 0 || !nullable(row[orderDate])) messages.push('Order date missing');
+    const statusValue = normalizeHeader(row[status]);
+    if (statusValue.includes('deliver') && (deliveryDate < 0 || !nullable(row[deliveryDate]))) messages.push('Delivery date missing for delivered order');
+    const hasProductQuantity = productColumns.some((product) => positiveInteger(row[product.index]) !== null);
+    if (!hasProductQuantity) messages.push('Product quantities missing');
+    if (messages.length) {
+      issues.push({ workbook: matrix.workbookName, sheet: matrix.sheetName, row: headerIndex + offset + 2, messages });
+    }
+  });
+  return issues;
+}
+
 export async function parseImportFile(file: File, kind: ImportKind): Promise<ImportParseSummary> {
   const matrices = await fileMatrices(file);
   const warnings: string[] = [];
@@ -421,5 +484,20 @@ export async function parseImportFile(file: File, kind: ImportKind): Promise<Imp
   const draftRows = kind === 'INVENTORY'
     ? inventoryRows.filter((row) => (!row.product_sku && !row.product_name) || row.target_quantity === null || (row.location_type === 'OUTLET' && !row.outlet_name)).length
     : creditRows.filter((row) => row.record_status === 'DRAFT').length;
-  return { kind, inventoryRows, creditRows, sheetNames: matrices.map((matrix) => matrix.sheetName), warnings, draftRows };
+  const issues: ImportParseIssue[] = kind === 'INVENTORY'
+    ? inventoryRows.filter((row) => (!row.product_sku && !row.product_name) || row.target_quantity === null || (row.location_type === 'OUTLET' && !row.outlet_name)).map((row) => ({
+      workbook: row.source_workbook,
+      sheet: row.source_sheet,
+      row: row.source_row,
+      messages: [
+        ...(!row.product_sku && !row.product_name ? ['Product missing'] : []),
+        ...(row.target_quantity === null ? ['Quantity missing or invalid'] : []),
+        ...(row.location_type === 'OUTLET' && !row.outlet_name ? ['Outlet name missing'] : []),
+      ],
+    }))
+    : [
+      ...creditRows.filter((row) => row.record_status === 'DRAFT').map((row) => ({ workbook: row.source_workbook, sheet: row.source_sheet, row: row.source_row, messages: row.quality_notes })),
+      ...matrices.flatMap(orderIssuesFromMatrix),
+    ];
+  return { kind, inventoryRows, creditRows, sheetNames: matrices.map((matrix) => matrix.sheetName), warnings, draftRows, issues };
 }

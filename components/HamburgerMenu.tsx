@@ -1,7 +1,7 @@
 'use client';
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { Building2, CircleDollarSign, Factory, FileSpreadsheet, Gauge, LogOut, MapPinned, Menu, ReceiptText, ShieldCheck, UsersRound, X } from 'lucide-react';
+import { Building2, CircleDollarSign, Factory, FileSpreadsheet, Gauge, LogOut, MapPinned, Menu, ReceiptText, UsersRound, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
@@ -25,7 +25,6 @@ export default function HamburgerMenu() {
     ] : []),
     { href: '/outlets', label: 'Outlets Portal', icon: Building2 },
     ...(isAdmin ? [
-      { href: '/outlets/tracker', label: 'Outlet Operations Tracker', icon: ShieldCheck },
       { href: '/admin/pricing', label: 'Price & Taxes', icon: CircleDollarSign },
       { href: '/admin/credit-sales', label: 'Operations Records', icon: ReceiptText },
     ] : []),
