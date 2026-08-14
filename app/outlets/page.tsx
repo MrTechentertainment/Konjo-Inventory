@@ -30,7 +30,7 @@ export default function OutletsPage() {
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
                   {items.map((outlet, index) => (
                     <motion.div key={outlet.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(index * 0.03, 0.15) }}>
-                      <Link href={`/outlets/${outlet.id}`} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-md shadow-black/10 transition active:scale-[0.98]"><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-konjo-cream">{outlet.name}</p><p className="mt-0.5 text-[10.5px] text-konjo-cream/35">Open stock workspace</p></div><ChevronRight size={17} className="text-konjo-cream/30" /></Link>
+                      <Link href={`/outlets/${outlet.id}`} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-md shadow-black/10 transition active:scale-[0.98]"><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-konjo-cream">{outlet.name}</p><p className="mt-0.5 text-[10.5px] text-konjo-cream/35">Open outlet dashboard</p></div><ChevronRight size={17} className="text-konjo-cream/30" /></Link>
                     </motion.div>
                   ))}
                   {!loading && !items.length && <p className="rounded-xl border border-dashed border-white/10 p-3 text-xs text-konjo-cream/30">No locations configured.</p>}

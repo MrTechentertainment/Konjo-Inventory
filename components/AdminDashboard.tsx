@@ -11,7 +11,6 @@ import {
   FileSpreadsheet,
   MapPinned,
   ReceiptText,
-  ShieldCheck,
   Store,
   UsersRound,
 } from 'lucide-react';
@@ -81,8 +80,7 @@ export default function AdminDashboard() {
     () => [
       { href: '/factory', title: 'Factory Inventory', description: 'Live stock, batch movements and audit history', icon: Factory, tone: 'from-konjo-red/35 via-konjo-red/10 to-transparent', metric: `${summary.factoryUnits.toLocaleString()} units` },
       { href: '/admin/outlets', title: 'Outlets Management', description: 'Create, edit and archive field locations', icon: MapPinned, tone: 'from-konjo-amber/30 via-konjo-amber/10 to-transparent', metric: `${summary.outlets} locations` },
-      { href: '/outlets', title: 'Outlets Portal', description: 'Deliver stock and record field sales or usage', icon: Store, tone: 'from-konjo-green/35 via-konjo-green/10 to-transparent', metric: 'Open portal' },
-      { href: '/outlets/tracker', title: 'Operations Tracker', description: 'See remaining stock and the live outlet feed', icon: ShieldCheck, tone: 'from-sky-500/30 via-sky-500/10 to-transparent', metric: 'Live activity' },
+      { href: '/outlets', title: 'Outlets Portal', description: 'Open each outlet dashboard for stock, sales, payments and live activity', icon: Store, tone: 'from-konjo-green/35 via-konjo-green/10 to-transparent', metric: 'Open portal' },
       { href: '/admin/pricing', title: 'Price & Taxes', description: 'Maintain selling price and tax for every product', icon: CircleDollarSign, tone: 'from-violet-500/30 via-violet-500/10 to-transparent', metric: `${summary.products} products` },
       { href: '/admin/credit-sales', title: 'Operations Records', description: 'Review and edit credit sales, orders and samples', icon: ReceiptText, tone: 'from-cyan-500/30 via-cyan-500/10 to-transparent', metric: `${summary.unpaidSales} unpaid` },
       ...(root ? [{ href: '/admin/import', title: 'Data Import', description: 'Protected CSV, XLSX and PDF inventory synchronization', icon: FileSpreadsheet, tone: 'from-emerald-500/30 via-emerald-500/10 to-transparent', metric: 'Root only' }] : []),
