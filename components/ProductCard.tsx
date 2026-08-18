@@ -3,17 +3,20 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { memo } from 'react';
-import { Minus, Plus, SlidersHorizontal } from 'lucide-react';
+import { Minus, Pencil, Plus, SlidersHorizontal } from 'lucide-react';
 import type { Product } from '@/lib/types';
 import { getProductAccent } from '@/lib/productAccent';
+import ProductThumbnail from './ProductThumbnail';
 
 interface ProductCardProps {
   product: Product;
   onQuickAdjust: (product: Product, delta: number) => void;
   onOpenBatch: (product: Product) => void;
+  canEditImage?: boolean;
+  onEditImage?: (product: Product) => void;
 }
 
-function ProductCard({ product, onQuickAdjust, onOpenBatch }: ProductCardProps) {
+function ProductCard({ product, onQuickAdjust, onOpenBatch, canEditImage = false, onEditImage }: ProductCardProps) {
   const accent = getProductAccent(product.name);
   const isLow = product.current_stock <= product.low_stock_threshold;
   const [pulseKey, setPulseKey] = useState(0);
@@ -30,9 +33,14 @@ function ProductCard({ product, onQuickAdjust, onOpenBatch }: ProductCardProps) 
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className={`relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] p-3.5 shadow-lg ring-1 backdrop-blur-md ${accent.ring} ${accent.glow}`}
+      className={`relative min-h-[250px] overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] p-3.5 shadow-lg ring-1 backdrop-blur-md ${accent.ring} ${accent.glow}`}
     >
       <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${accent.gradient}`} />
+
+      <div className="relative mb-3 flex h-24 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black/15 p-2">
+        <ProductThumbnail imageUrl={product.image_url} alt={product.name} className="h-full w-full border-0 bg-transparent p-0" />
+        {canEditImage && onEditImage && <button onClick={() => onEditImage(product)} aria-label={`Upload or edit ${product.name} image`} title="Root Owner: edit product image" className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-lg border border-konjo-amber/25 bg-konjo-charcoal/90 text-konjo-amber shadow-lg"><Pencil size={12} /></button>}
+      </div>
 
       <div className="relative flex items-start justify-between gap-2">
         <div className="min-w-0">

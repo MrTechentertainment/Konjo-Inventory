@@ -4,6 +4,7 @@ import { memo, useMemo, useState } from 'react';
 import { Minus, PackagePlus, Pencil } from 'lucide-react';
 import { packsToBottles, productPackSize } from '@/lib/outlets';
 import type { Outlet, Product } from '@/lib/types';
+import ProductThumbnail from './ProductThumbnail';
 
 interface Props {
   outlet: Outlet;
@@ -60,6 +61,7 @@ function BazaarSalesTracker({ outlet, products, stockByProduct, onLogChange, onR
           const stock = stockByProduct[product.id] ?? 0;
           return (
             <article key={product.id} className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 shadow-lg shadow-black/10">
+              <ProductThumbnail imageUrl={product.image_url} alt={product.name} className="mb-3 h-24 w-full" />
               <div className="flex min-h-9 items-start justify-between gap-2"><p className="text-xs font-semibold leading-tight text-konjo-cream">{product.name}</p>{canEditStock && <button onClick={() => onEditStock(product)} aria-label={`Edit ${product.name} current stock`} title="Edit exact current stock" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-konjo-amber/20 bg-konjo-amber/10 text-konjo-amber"><Pencil size={12} /></button>}</div>
               <p className="mt-2 font-display text-3xl font-bold tabular-nums text-konjo-cream">{stock}</p>
               <p className="text-[10px] text-konjo-cream/35">bottles remaining</p>

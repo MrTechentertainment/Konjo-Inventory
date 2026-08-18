@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { errorMessage, isTransientError, newOperationId, withTimeout } from './async';
+import { PRODUCT_IMAGE_BUCKET, productImageStoragePath, resizeProductImage } from './productImages';
 import { supabase } from './supabaseClient';
 import type { Product, ProductCreateInput, SyncState, TransactionType } from './types';
 
@@ -269,6 +270,43 @@ export function useInventory(enabled = true) {
     }
   }, []);
 
+  const setProductImage = useCallback(async (product: Product, file: File | null) => {
+    setInflight((count) => count + 1);
+    let uploadedPath: string | null = null;
+    try {
+      let nextUrl: string | null = null;
+      if (file) {
+        const resized = await resizeProductImage(file);
+        uploadedPath = `${product.id}/${Date.now()}-${crypto.randomUUID()}.webp`;
+        const upload = await withTimeout(
+          async () => await supabase.storage.from(PRODUCT_IMAGE_BUCKET).upload(uploadedPath!, resized, { contentType: 'image/webp', cacheControl: '31536000', upsert: false }),
+          `Uploading ${product.name} image`
+        );
+        if (upload.error) throw upload.error;
+        nextUrl = supabase.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(uploadedPath).data.publicUrl;
+      }
+
+      const result = await withTimeout(
+        async (signal) => await supabase.rpc('root_set_product_image', { target_product_id: product.id, new_image_url: nextUrl }).abortSignal(signal),
+        `Saving ${product.name} image`
+      );
+      if (result.error) throw result.error;
+      const updated = firstProduct(result.data);
+      if (!updated) throw new Error('Supabase did not return the updated product.');
+      dispatch({ type: 'REALTIME_PRODUCT', product: updated });
+
+      const oldPath = productImageStoragePath(product.image_url);
+      if (oldPath && oldPath !== uploadedPath) void supabase.storage.from(PRODUCT_IMAGE_BUCKET).remove([oldPath]);
+      return true;
+    } catch (error) {
+      if (uploadedPath) void supabase.storage.from(PRODUCT_IMAGE_BUCKET).remove([uploadedPath]);
+      dispatch({ type: 'SET_ERROR', error: errorMessage(error, 'Could not save the product image.') });
+      return false;
+    } finally {
+      setInflight((count) => Math.max(0, count - 1));
+    }
+  }, []);
+
   const products = useMemo(() => {
     const deltaByProduct = Object.values(state.pending).reduce<Record<string, number>>((totals, mutation) => {
       totals[mutation.productId] = (totals[mutation.productId] ?? 0) + mutation.delta;
@@ -291,6 +329,7 @@ export function useInventory(enabled = true) {
     syncState,
     adjustStock,
     addProduct,
+    setProductImage,
     reload: loadProducts,
   };
 }

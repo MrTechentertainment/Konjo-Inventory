@@ -1,5 +1,10 @@
 import type { OutletType } from './types';
 
+export const ACTIVATION_PORTAL_URL = 'https://ktally.netlify.app/' as const;
+
+/** Activation events are managed by KTally, not the local outlet database. */
+export const LOCAL_OUTLET_TYPES: Exclude<OutletType, 'EVENT'>[] = ['SUPERMARKET', 'BAZAAR', 'GIFT', 'SAMPLE'];
+
 /** The company-wide conversion. Never duplicate this literal in components. */
 export const BOTTLES_PER_PACK = 15 as const;
 

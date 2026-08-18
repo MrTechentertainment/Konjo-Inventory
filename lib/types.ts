@@ -10,6 +10,7 @@ export interface Product {
   unit_price_etb: number;
   tax_rate: number;
   bottles_per_pack: number;
+  image_url: string | null;
   stock_revision: number;
   is_active: boolean;
   created_at: string;

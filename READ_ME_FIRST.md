@@ -6,6 +6,7 @@ Verified on 2026-08-11 for the completed fiscal-2019 Supabase database.
 
 - The database migration and data reset are already complete.
 - Do **not** run Part 4D, Part 5, `schema.sql`, `update_schema.sql`, or any older SQL file again.
+- For this feature branch, run only the two additive migrations in `supabase/migrations/`, in filename order. The second migration creates the product-image bucket and Root Owner-only image controls.
 - This package contains website source code only. It intentionally contains no database-reset SQL, audit workbook, `.env.local`, password, or private key.
 - Keep the existing `.env.local` in your Git repository. Do not replace it with `.env.local.example`.
 

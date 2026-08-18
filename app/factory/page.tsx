@@ -6,9 +6,10 @@ import { useCallback, useEffect, useState } from 'react';
 import ErrorToast from '@/components/ErrorToast';
 import Header from '@/components/Header';
 import KpiCards from '@/components/KpiCards';
+import ProductImageModal from '@/components/ProductImageModal';
 import ProductGrid from '@/components/ProductGrid';
 import { useAuth } from '@/lib/AuthContext';
-import { isAdminProfile } from '@/lib/authz';
+import { isAdminProfile, isRootProfile } from '@/lib/authz';
 import type { Product, TransactionType } from '@/lib/types';
 import { useInventory } from '@/lib/useInventory';
 
@@ -20,10 +21,12 @@ export default function FactoryInventoryPage() {
   const { profile } = useAuth();
   const router = useRouter();
   const authorized = isAdminProfile(profile);
-  const { products, loading, error, clearError, syncState, adjustStock, addProduct } = useInventory(authorized);
+  const rootOwner = isRootProfile(profile);
+  const { products, loading, error, clearError, syncState, adjustStock, addProduct, setProductImage } = useInventory(authorized);
   const [batchProduct, setBatchProduct] = useState<Product | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
+  const [imageProduct, setImageProduct] = useState<Product | null>(null);
 
   useEffect(() => {
     if (profile && !authorized) router.replace('/outlets');
@@ -54,12 +57,13 @@ export default function FactoryInventoryPage() {
         {loading ? (
           <div className="mt-10 flex justify-center"><div className="h-6 w-6 animate-spin rounded-full border-2 border-white/15 border-t-konjo-red" /></div>
         ) : (
-          <div className="mt-4"><ProductGrid products={products} onQuickAdjust={handleQuickAdjust} onOpenBatch={setBatchProduct} /></div>
+          <div className="mt-4"><ProductGrid products={products} onQuickAdjust={handleQuickAdjust} onOpenBatch={setBatchProduct} canEditImages={rootOwner} onEditImage={setImageProduct} /></div>
         )}
       </main>
       {batchProduct && <BatchAdjustModal product={batchProduct} staffName={profile?.username ?? ''} onClose={() => setBatchProduct(null)} onSubmit={handleBatchSubmit} />}
       {isAddOpen && <AddProductModal isOpen onClose={() => setIsAddOpen(false)} onSubmit={addProduct} />}
       {isAuditOpen && <AuditDrawer isOpen onClose={() => setIsAuditOpen(false)} />}
+      {rootOwner && <ProductImageModal product={imageProduct} onClose={() => setImageProduct(null)} onSave={setProductImage} />}
       <ErrorToast message={error} onDismiss={clearError} />
     </div>
   );
