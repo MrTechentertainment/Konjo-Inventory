@@ -10,9 +10,11 @@ interface ProductGridProps {
   products: Product[];
   onQuickAdjust: (product: Product, delta: number) => void;
   onOpenBatch: (product: Product) => void;
+  canEditImages?: boolean;
+  onEditImage?: (product: Product) => void;
 }
 
-export default function ProductGrid({ products, onQuickAdjust, onOpenBatch }: ProductGridProps) {
+export default function ProductGrid({ products, onQuickAdjust, onOpenBatch, canEditImages = false, onEditImage }: ProductGridProps) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string | 'All'>('All');
 
@@ -66,11 +68,11 @@ export default function ProductGrid({ products, onQuickAdjust, onOpenBatch }: Pr
           <p className="mt-1 text-[11.5px] text-konjo-cream/35">Try a different search or category.</p>
         </div>
       ) : (
-        <div className="mt-3 grid grid-cols-2 gap-3 pb-4">
+        <div className="mt-3 grid grid-cols-1 gap-3 pb-4 sm:grid-cols-2">
           <AnimatePresence initial={false} mode="popLayout">
             {filtered.map((product) => (
               <motion.div key={product.id} layout="position" exit={{ opacity: 0 }}>
-                <ProductCard product={product} onQuickAdjust={onQuickAdjust} onOpenBatch={onOpenBatch} />
+                <ProductCard product={product} onQuickAdjust={onQuickAdjust} onOpenBatch={onOpenBatch} canEditImage={canEditImages} onEditImage={onEditImage} />
               </motion.div>
             ))}
           </AnimatePresence>

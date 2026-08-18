@@ -13,5 +13,5 @@ export default function PricingPage() {
   const authorized = isAdminProfile(profile);
   useEffect(() => { if (profile && !authorized) router.replace('/outlets'); }, [authorized, profile, router]);
   if (!authorized) return null;
-  return <div className="min-h-dvh bg-konjo-charcoal pb-12"><Header title="Price & Taxes" subtitle="admin catalog controls" /><main className="mx-auto max-w-3xl px-4 pt-6"><div className="mb-5"><h1 className="font-display text-xl font-bold text-konjo-cream">Product pricing</h1><p className="mt-1 text-xs text-konjo-cream/45">Prices are in Ethiopian birr. Enter tax as a percentage, for example 15.</p></div><PriceTaxManager /></main></div>;
+  return <div className="min-h-dvh bg-konjo-charcoal pb-12"><Header title="Price & Taxes" subtitle="admin catalog controls" /><main className="mx-auto max-w-3xl px-4 pt-6"><div className="mb-5"><h1 className="font-display text-xl font-bold text-konjo-cream">Product pricing</h1><p className="mt-1 text-xs text-konjo-cream/45">Set the before-tax price per bottle, tax percentage, and bottles in one pack. Outlet delivery totals use these values automatically.</p></div><PriceTaxManager /></main></div>;
 }
