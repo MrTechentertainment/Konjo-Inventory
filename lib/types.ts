@@ -9,6 +9,7 @@ export interface Product {
   low_stock_threshold: number;
   unit_price_etb: number;
   tax_rate: number;
+  bottles_per_pack: number;
   stock_revision: number;
   is_active: boolean;
   created_at: string;
@@ -110,4 +111,24 @@ export interface OutletOperationFeedRow {
   change_bottles: number;
   username: string;
   timestamp: string;
+}
+
+export interface OutletDeliveryFinancialRow {
+  id: string;
+  delivery_batch_id: string;
+  product_id: string;
+  product_name: string;
+  product_sku: string;
+  quantity_entered: number;
+  quantity_unit: 'BOTTLE' | 'PACK';
+  quantity_bottles: number;
+  bottles_per_pack: number;
+  unit_price_etb: number;
+  tax_rate: number;
+  subtotal_etb: number;
+  tax_amount_etb: number;
+  total_amount_etb: number;
+  username: string;
+  timestamp: string;
+  notes: string | null;
 }

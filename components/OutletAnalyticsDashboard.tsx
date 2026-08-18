@@ -2,12 +2,13 @@
 
 import { Activity, CalendarRange, CheckCircle2, CircleDollarSign, Clock3, PackageCheck, ReceiptText, Truck } from 'lucide-react';
 import { sourceLocationLabel } from '@/lib/sourceProvenance';
+import { productPackSize } from '@/lib/outlets';
 import { formatEAT } from '@/lib/time';
 import type { Outlet, Product } from '@/lib/types';
 import { useOutletAnalytics } from '@/lib/useOutletAnalytics';
 
 function formatEtb(value: number): string {
-  return `ETB ${Math.round(value).toLocaleString()}`;
+  return `ETB ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function recordDate(parsed: string | null, raw: string | null): string {
@@ -29,20 +30,42 @@ export default function OutletAnalyticsDashboard({ outlet, products, stockByProd
   const analytics = useOutletAnalytics(outlet.id);
   const currentStock = products.reduce((sum, product) => sum + (stockByProduct[product.id] ?? 0), 0);
   const unpaidValue = analytics.pendingPayments.reduce((sum, sale) => sum + (sale.totalPrice ?? 0), 0);
+  const stockValuation = products.map((product) => {
+    const bottles = stockByProduct[product.id] ?? 0;
+    const subtotal = bottles * Number(product.unit_price_etb ?? 0);
+    const tax = subtotal * Number(product.tax_rate ?? 0);
+    return { product, bottles, subtotal, tax, total: subtotal + tax };
+  });
+  const currentValue = stockValuation.reduce((totals, row) => ({ subtotal: totals.subtotal + row.subtotal, tax: totals.tax + row.tax, total: totals.total + row.total }), { subtotal: 0, tax: 0, total: 0 });
 
   return (
     <div className="space-y-6 px-4 pb-12 pt-2">
       <section>
-        <div className="mb-3 flex items-center gap-2"><CalendarRange size={17} className="text-konjo-amber" /><div><h2 className="font-display text-base font-bold text-konjo-cream">Outlet analytics</h2><p className="text-[10.5px] text-konjo-cream/35">Historical Excel records and live outlet operations in one workspace.</p></div></div>
+        <div className="mb-3 flex items-center gap-2"><CalendarRange size={17} className="text-konjo-amber" /><div><h2 className="font-display text-base font-bold text-konjo-cream">Outlet analytics</h2><p className="text-[10.5px] text-konjo-cream/35">{analytics.canViewAdminAnalytics ? 'Historical Excel records and live outlet operations in one workspace.' : 'Live stock, pricing, tax, deliveries, and sales for this outlet.'}</p></div></div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3"><ReceiptText size={15} className="text-konjo-amber" /><p className="mt-2 font-display text-2xl font-bold tabular-nums text-konjo-cream">{analytics.loading ? '…' : analytics.orders.length}</p><p className="text-[9.5px] uppercase tracking-wide text-konjo-cream/35">Previous orders</p></div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3"><CircleDollarSign size={15} className="text-konjo-red" /><p className="mt-2 truncate font-display text-lg font-bold tabular-nums text-konjo-cream">{analytics.loading ? '…' : formatEtb(unpaidValue)}</p><p className="text-[9.5px] uppercase tracking-wide text-konjo-cream/35">Pending payment</p></div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3"><Truck size={15} className="text-konjo-green" /><p className="mt-2 font-display text-2xl font-bold tabular-nums text-konjo-cream">{analytics.loading ? '…' : analytics.deliveryCounts.ordered}</p><p className="text-[9.5px] uppercase tracking-wide text-konjo-cream/35">Awaiting delivery</p></div>
+          {analytics.canViewAdminAnalytics && <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3"><ReceiptText size={15} className="text-konjo-amber" /><p className="mt-2 font-display text-2xl font-bold tabular-nums text-konjo-cream">{analytics.loading ? '…' : analytics.orders.length}</p><p className="text-[9.5px] uppercase tracking-wide text-konjo-cream/35">Previous orders</p></div>}
+          {analytics.canViewAdminAnalytics && <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3"><CircleDollarSign size={15} className="text-konjo-red" /><p className="mt-2 truncate font-display text-lg font-bold tabular-nums text-konjo-cream">{analytics.loading ? '…' : formatEtb(unpaidValue)}</p><p className="text-[9.5px] uppercase tracking-wide text-konjo-cream/35">Pending payment</p></div>}
+          {analytics.canViewAdminAnalytics && <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3"><Truck size={15} className="text-konjo-green" /><p className="mt-2 font-display text-2xl font-bold tabular-nums text-konjo-cream">{analytics.loading ? '…' : analytics.deliveryCounts.ordered}</p><p className="text-[9.5px] uppercase tracking-wide text-konjo-cream/35">Awaiting delivery</p></div>}
           <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3"><PackageCheck size={15} className="text-konjo-green" /><p className="mt-2 font-display text-2xl font-bold tabular-nums text-konjo-cream">{currentStock.toLocaleString()}</p><p className="text-[9.5px] uppercase tracking-wide text-konjo-cream/35">Current bottles</p></div>
         </div>
         {analytics.error && <p role="alert" className="mt-3 rounded-xl border border-konjo-amber/25 bg-konjo-amber/10 p-3 text-[10.5px] text-konjo-amber">{analytics.error}</p>}
       </section>
 
+      <section>
+        <h2 className="flex items-center gap-2 font-display text-sm font-semibold text-konjo-cream"><CircleDollarSign size={16} className="text-konjo-green" />Current stock valuation</h2>
+        <p className="mt-1 text-[10px] text-konjo-cream/35">Live estimate using today&apos;s bottle price, tax rate, and product-specific pack size from Price &amp; Taxes.</p>
+        <div className="mt-2 grid grid-cols-3 gap-2"><div className="rounded-xl border border-white/10 bg-white/[0.035] p-3"><p className="truncate text-xs font-bold text-konjo-cream">{formatEtb(currentValue.subtotal)}</p><p className="text-[8.5px] uppercase text-konjo-cream/30">Before tax</p></div><div className="rounded-xl border border-white/10 bg-white/[0.035] p-3"><p className="truncate text-xs font-bold text-konjo-amber">{formatEtb(currentValue.tax)}</p><p className="text-[8.5px] uppercase text-konjo-cream/30">Tax</p></div><div className="rounded-xl border border-white/10 bg-white/[0.035] p-3"><p className="truncate text-xs font-bold text-konjo-green">{formatEtb(currentValue.total)}</p><p className="text-[8.5px] uppercase text-konjo-cream/30">Including tax</p></div></div>
+        <div className="mt-2 space-y-2">{stockValuation.map(({ product, bottles, subtotal, tax, total }) => <article key={product.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-xs font-semibold text-konjo-cream">{product.name}</p><p className="text-[9.5px] text-konjo-cream/35">{bottles} bottles · {productPackSize(product)} bottles/pack · {formatEtb(Number(product.unit_price_etb ?? 0))}/bottle</p></div><p className="shrink-0 text-xs font-bold text-konjo-green">{formatEtb(total)}</p></div><p className="mt-1 text-[9px] text-konjo-cream/30">{formatEtb(subtotal)} before tax + {formatEtb(tax)} tax ({(Number(product.tax_rate ?? 0) * 100).toFixed(2)}%)</p></article>)}</div>
+      </section>
+
+      <section>
+        <h2 className="flex items-center gap-2 font-display text-sm font-semibold text-konjo-cream"><PackageCheck size={16} className="text-konjo-amber" />Priced delivery history</h2>
+        <p className="mt-1 text-[10px] text-konjo-cream/35">Each delivery keeps the price, tax, and pack size that applied when it was saved. Later price changes do not rewrite historical totals.</p>
+        {analytics.deliveries.length > 0 && <div className="mt-2 grid grid-cols-3 gap-2"><div className="rounded-xl bg-black/15 p-2 text-center"><p className="text-[10.5px] font-bold text-konjo-cream">{formatEtb(analytics.deliveredFinancials.subtotal)}</p><p className="text-[8px] uppercase text-konjo-cream/30">Before tax</p></div><div className="rounded-xl bg-black/15 p-2 text-center"><p className="text-[10.5px] font-bold text-konjo-amber">{formatEtb(analytics.deliveredFinancials.tax)}</p><p className="text-[8px] uppercase text-konjo-cream/30">Tax</p></div><div className="rounded-xl bg-black/15 p-2 text-center"><p className="text-[10.5px] font-bold text-konjo-green">{formatEtb(analytics.deliveredFinancials.total)}</p><p className="text-[8px] uppercase text-konjo-cream/30">Total</p></div></div>}
+        <div className="mt-2 space-y-2">{analytics.deliveries.map((delivery) => <article key={delivery.id} className="rounded-2xl border border-white/10 bg-white/[0.035] p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-xs font-semibold text-konjo-cream">{delivery.product_name}</p><p className="text-[9.5px] text-konjo-cream/35">{delivery.quantity_entered} {delivery.quantity_unit.toLowerCase()}{delivery.quantity_entered === 1 ? '' : 's'} × {delivery.bottles_per_pack} bottles/pack = {delivery.quantity_bottles} bottles</p></div><p className="shrink-0 text-xs font-bold text-konjo-green">{formatEtb(delivery.total_amount_etb)}</p></div><p className="mt-1 text-[9.5px] text-konjo-cream/40">{formatEtb(delivery.unit_price_etb)}/bottle · {formatEtb(delivery.subtotal_etb)} before tax + {formatEtb(delivery.tax_amount_etb)} tax ({(delivery.tax_rate * 100).toFixed(2)}%)</p><p className="mt-1 text-[9px] text-konjo-cream/25">Saved by {delivery.username} · {formatEAT(delivery.timestamp)}</p></article>)}{!analytics.loading && !analytics.deliveries.length && <p className="rounded-xl border border-dashed border-white/10 p-5 text-center text-xs text-konjo-cream/30">No priced deliveries have been recorded yet. Older unpriced stock logs remain visible in the operations tracker.</p>}</div>
+      </section>
+
+      {analytics.canViewAdminAnalytics && <>
       <section>
         <h2 className="flex items-center gap-2 font-display text-sm font-semibold text-konjo-cream"><Truck size={16} className="text-konjo-green" />Delivery status</h2>
         <div className="mt-2 grid grid-cols-3 gap-2">
@@ -84,6 +107,7 @@ export default function OutletAnalyticsDashboard({ outlet, products, stockByProd
           {!analytics.loading && !analytics.activity.length && <p className="rounded-xl border border-dashed border-white/10 p-5 text-center text-xs text-konjo-cream/30">No live stock activity has been logged for this outlet yet.</p>}
         </div>
       </section>
+      </>}
     </div>
   );
 }

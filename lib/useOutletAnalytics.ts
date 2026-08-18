@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { errorMessage, withTimeout } from './async';
+import { isAdminProfile } from './authz';
+import { useAuth } from './AuthContext';
 import { sourceLocation, type SourceLocation } from './sourceProvenance';
 import { supabase } from './supabaseClient';
-import type { OutletOperationFeedRow } from './types';
+import type { OutletDeliveryFinancialRow, OutletOperationFeedRow } from './types';
 
 export interface OutletAnalyticsItem {
   sku: string;
@@ -108,19 +110,23 @@ function monthlyVolumes(orders: OutletOrderAnalytics[]): MonthlyProductVolume[] 
 }
 
 export function useOutletAnalytics(outletId: string) {
+  const { profile } = useAuth();
+  const canViewAdminAnalytics = isAdminProfile(profile);
   const [orders, setOrders] = useState<OutletOrderAnalytics[]>([]);
   const [creditSales, setCreditSales] = useState<OutletCreditAnalytics[]>([]);
   const [activity, setActivity] = useState<OutletOperationFeedRow[]>([]);
+  const [deliveries, setDeliveries] = useState<OutletDeliveryFinancialRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!outletId) return;
     try {
-      const [orderResult, creditResult, feedResult] = await withTimeout(async (signal) => await Promise.all([
-        supabase.from('sales_orders').select('id,legacy_reference,status,order_date,order_date_raw,delivery_date,delivery_date_raw,record_status,quality_notes,source_name,source_sheet,source_row,raw_row,sales_order_items(quantity,products(sku,name))').eq('outlet_id', outletId).order('order_date', { ascending: false, nullsFirst: false }).limit(250).abortSignal(signal),
-        supabase.from('credit_sales').select('id,legacy_reference,payment_status,total_price,refilled_date,refilled_date_raw,due_date,due_date_raw,payment_date,payment_date_raw,record_status,quality_notes,source_name,source_sheet,source_row,raw_row,credit_sale_items(quantity,products(sku,name))').eq('outlet_id', outletId).order('refilled_date', { ascending: false, nullsFirst: false }).limit(250).abortSignal(signal),
-        supabase.rpc('get_outlet_operations_feed', { row_limit: 500 }).abortSignal(signal),
+      const [orderResult, creditResult, feedResult, deliveryResult] = await withTimeout(async (signal) => await Promise.all([
+        canViewAdminAnalytics ? supabase.from('sales_orders').select('id,legacy_reference,status,order_date,order_date_raw,delivery_date,delivery_date_raw,record_status,quality_notes,source_name,source_sheet,source_row,raw_row,sales_order_items(quantity,products(sku,name))').eq('outlet_id', outletId).order('order_date', { ascending: false, nullsFirst: false }).limit(250).abortSignal(signal) : Promise.resolve({ data: [], error: null }),
+        canViewAdminAnalytics ? supabase.from('credit_sales').select('id,legacy_reference,payment_status,total_price,refilled_date,refilled_date_raw,due_date,due_date_raw,payment_date,payment_date_raw,record_status,quality_notes,source_name,source_sheet,source_row,raw_row,credit_sale_items(quantity,products(sku,name))').eq('outlet_id', outletId).order('refilled_date', { ascending: false, nullsFirst: false }).limit(250).abortSignal(signal) : Promise.resolve({ data: [], error: null }),
+        canViewAdminAnalytics ? supabase.rpc('get_outlet_operations_feed', { row_limit: 500 }).abortSignal(signal) : Promise.resolve({ data: [], error: null }),
+        supabase.rpc('get_outlet_delivery_financials', { target_outlet_id: outletId, row_limit: 250 }).abortSignal(signal),
       ]), 'Loading outlet analytics', 30_000);
       const requiredError = orderResult.error ?? creditResult.error;
       if (requiredError) throw requiredError;
@@ -158,15 +164,34 @@ export function useOutletAnalytics(outletId: string) {
       setOrders(mappedOrders);
       setCreditSales(mappedCredit);
       setActivity(feedResult.error ? [] : ((feedResult.data as OutletOperationFeedRow[] | null) ?? []).filter((row) => row.outlet_id === outletId));
-      setError(feedResult.error ? `Historical analytics loaded, but live activity is unavailable: ${feedResult.error.message}` : null);
+      setDeliveries(deliveryResult.error ? [] : ((deliveryResult.data as OutletDeliveryFinancialRow[] | null) ?? []).map((row) => ({
+        ...row,
+        quantity_entered: Number(row.quantity_entered),
+        quantity_bottles: Number(row.quantity_bottles),
+        bottles_per_pack: Number(row.bottles_per_pack),
+        unit_price_etb: Number(row.unit_price_etb),
+        tax_rate: Number(row.tax_rate),
+        subtotal_etb: Number(row.subtotal_etb),
+        tax_amount_etb: Number(row.tax_amount_etb),
+        total_amount_etb: Number(row.total_amount_etb),
+      })));
+      const optionalErrors = [feedResult.error?.message, deliveryResult.error?.message].filter(Boolean);
+      setError(optionalErrors.length ? `Historical analytics loaded, but some live details are unavailable: ${optionalErrors.join(' · ')}` : null);
     } catch (caught) {
       setError(errorMessage(caught, 'Could not load this outlet’s historical analytics.'));
     } finally {
       setLoading(false);
     }
-  }, [outletId]);
+  }, [canViewAdminAnalytics, outletId]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const refresh = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === outletId) void load();
+    };
+    window.addEventListener('konjo:outlet-updated', refresh);
+    return () => window.removeEventListener('konjo:outlet-updated', refresh);
+  }, [load, outletId]);
   useEffect(() => {
     if (!outletId) return;
     const channel = supabase.channel(`outlet-dashboard-${outletId}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'outlet_logs', filter: `outlet_id=eq.${outletId}` }, () => void load()).subscribe();
@@ -181,6 +206,11 @@ export function useOutletAnalytics(outletId: string) {
     unknown: orders.filter((order) => order.status === 'UNKNOWN').length,
   }), [orders]);
   const undatedOrders = useMemo(() => orders.filter((order) => monthKey(order.orderDate ?? order.orderDateRaw ?? order.deliveryDate ?? order.deliveryDateRaw) === null).length, [orders]);
+  const deliveredFinancials = useMemo(() => ({
+    subtotal: deliveries.reduce((sum, row) => sum + row.subtotal_etb, 0),
+    tax: deliveries.reduce((sum, row) => sum + row.tax_amount_etb, 0),
+    total: deliveries.reduce((sum, row) => sum + row.total_amount_etb, 0),
+  }), [deliveries]);
 
-  return { orders, creditSales, pendingPayments, monthlyVolume, deliveryCounts, undatedOrders, activity, loading, error };
+  return { orders, creditSales, pendingPayments, monthlyVolume, deliveryCounts, undatedOrders, activity, deliveries, deliveredFinancials, canViewAdminAnalytics, loading, error };
 }

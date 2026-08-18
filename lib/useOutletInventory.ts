@@ -197,6 +197,60 @@ export function useOutletInventory(outletId: string) {
     [load, outletId, upsertInventory]
   );
 
+  const recordDelivery = useCallback(async (entries: { productId: string; quantity: number; unit: 'PACK' | 'BOTTLE' }[]) => {
+    if (!entries.length) return false;
+    try {
+      const result = await withTimeout(
+        async (signal) => await supabase.rpc('record_priced_outlet_delivery_batch', {
+          target_outlet_id: outletId,
+          p_items: entries.map((entry) => ({ product_id: entry.productId, quantity: entry.quantity, unit: entry.unit })),
+          p_operation_id: newOperationId(),
+          p_notes: null,
+        }).abortSignal(signal),
+        'Saving priced delivery'
+      );
+      if (result.error) throw result.error;
+      await load();
+      window.dispatchEvent(new CustomEvent('konjo:outlet-updated', { detail: outletId }));
+      return true;
+    } catch (caught) {
+      setError(errorMessage(caught, 'The priced delivery did not save.'));
+      return false;
+    }
+  }, [load, outletId]);
+
+  const setExactStock = useCallback(async (productId: string, targetStock: number, reason: string) => {
+    if (!Number.isInteger(targetStock) || targetStock < 0) {
+      setError('Current delivered stock must be a non-negative whole number of bottles.');
+      return false;
+    }
+    if (reason.trim().length < 3) {
+      setError('Enter a correction reason with at least 3 characters.');
+      return false;
+    }
+    try {
+      const result = await withTimeout(
+        async (signal) => await supabase.rpc('admin_set_outlet_stock_exact', {
+          target_outlet_id: outletId,
+          target_product_id: productId,
+          target_stock_bottles: targetStock,
+          adjustment_reason: reason.trim(),
+          p_operation_id: newOperationId(),
+        }).abortSignal(signal),
+        'Correcting outlet stock'
+      );
+      if (result.error) throw result.error;
+      const confirmed = firstInventoryRow(result.data);
+      if (confirmed) upsertInventory(confirmed);
+      else await load();
+      window.dispatchEvent(new CustomEvent('konjo:outlet-updated', { detail: outletId }));
+      return true;
+    } catch (caught) {
+      setError(errorMessage(caught, 'The outlet stock correction did not save.'));
+      return false;
+    }
+  }, [load, outletId, upsertInventory]);
+
   return {
     outlet,
     products,
@@ -205,5 +259,7 @@ export function useOutletInventory(outletId: string) {
     error,
     clearError: () => setError(null),
     logChange,
+    recordDelivery,
+    setExactStock,
   };
 }

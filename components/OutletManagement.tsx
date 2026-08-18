@@ -46,7 +46,7 @@ export default function OutletManagement() {
     setError(null);
     try {
       const result = await withTimeout(
-        async (signal) => await supabase.rpc('admin_upsert_outlet', { target_outlet_id: form.id, outlet_name: form.name.trim(), outlet_type_value: form.type, outlet_address: form.address.trim() || null, outlet_subcity: form.subcity.trim() || null, outlet_active: form.active }).abortSignal(signal),
+        async (signal) => await supabase.rpc('admin_save_outlet', { target_outlet_id: form.id, outlet_name: form.name.trim(), outlet_type_value: form.type, outlet_address: form.address.trim() || null, outlet_subcity: form.subcity.trim() || null, outlet_active: form.active }).abortSignal(signal),
         'Saving outlet'
       );
       if (result.error) throw result.error;
@@ -62,7 +62,7 @@ export default function OutletManagement() {
   const setActive = async (outlet: Outlet, active: boolean) => {
     setError(null);
     try {
-      const result = await withTimeout(async (signal) => await supabase.rpc('admin_upsert_outlet', { target_outlet_id: outlet.id, outlet_name: outlet.name, outlet_type_value: outlet.type, outlet_address: outlet.address, outlet_subcity: outlet.subcity, outlet_active: active }).abortSignal(signal), 'Updating outlet');
+      const result = await withTimeout(async (signal) => await supabase.rpc('admin_save_outlet', { target_outlet_id: outlet.id, outlet_name: outlet.name, outlet_type_value: outlet.type, outlet_address: outlet.address, outlet_subcity: outlet.subcity, outlet_active: active }).abortSignal(signal), 'Updating outlet');
       if (result.error) throw result.error;
       await load();
     } catch (caught) {
