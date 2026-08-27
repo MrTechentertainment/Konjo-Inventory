@@ -268,10 +268,14 @@ begin
     if product_row.unit_price_etb is null or product_row.unit_price_etb <= 0 then
       raise exception 'Set a positive bottle price for % before recording a delivery', product_row.name;
     end if;
-    if quantity_value::numeric * case when unit_value = 'PACK' then product_row.bottles_per_pack else 1 end > 2147483647 then
-      raise exception 'Delivery quantity is larger than the supported whole-bottle limit';
+    if unit_value = 'PACK' then
+      if quantity_value::numeric * product_row.bottles_per_pack::numeric > 2147483647::numeric then
+        raise exception 'Delivery quantity is larger than the supported whole-bottle limit';
+      end if;
+      bottle_count := quantity_value * product_row.bottles_per_pack;
+    else
+      bottle_count := quantity_value;
     end if;
-    bottle_count := quantity_value * case when unit_value = 'PACK' then product_row.bottles_per_pack else 1 end;
     line_subtotal := round(bottle_count * product_row.unit_price_etb, 4);
     line_tax := round(line_subtotal * product_row.tax_rate, 4);
     line_total := line_subtotal + line_tax;
