@@ -8,8 +8,6 @@ import { useState } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { isAdminProfile, isRootProfile } from '@/lib/authz';
 
-export const ROLE_MODAL_EVENT = 'konjo:open-role-management';
-
 export default function HamburgerMenu() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -28,7 +26,10 @@ export default function HamburgerMenu() {
       { href: '/admin/pricing', label: 'Price & Taxes', icon: CircleDollarSign },
       { href: '/admin/credit-sales', label: 'Operations Records', icon: ReceiptText },
     ] : []),
-    ...(isRoot ? [{ href: '/admin/import', label: 'Data Import', icon: FileSpreadsheet }] : []),
+    ...(isRoot ? [
+      { href: '/admin/import', label: 'Data Import', icon: FileSpreadsheet },
+      { href: '/admin/users', label: 'User Management', icon: UsersRound },
+    ] : []),
   ];
 
   return (
@@ -48,11 +49,6 @@ export default function HamburgerMenu() {
                     <Icon size={17} />{label}
                   </Link>
                 ))}
-                {isRoot && (
-                  <button onClick={() => { setOpen(false); window.dispatchEvent(new Event(ROLE_MODAL_EVENT)); }} className="flex w-full items-center gap-3 rounded-xl border border-konjo-amber/25 bg-konjo-amber/10 px-3 py-3 text-left text-sm text-konjo-amber">
-                    <UsersRound size={17} />User Role Management
-                  </button>
-                )}
               </div>
               <button onClick={() => void logout()} className="mt-auto flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-sm text-konjo-cream/60"><LogOut size={17} />Sign out</button>
             </motion.nav>

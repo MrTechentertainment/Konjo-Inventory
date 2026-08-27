@@ -1,12 +1,16 @@
-# KONJO IMS — Final Verified Website Package
+# KONJO IMS — Mobile Outlet and Access Repair
 
-Verified on 2026-08-11 for the completed fiscal-2019 Supabase database.
+Verified locally on 2026-08-27 against the completed fiscal-2019 website source.
 
 ## Important
 
-- The database migration and data reset are already complete.
+- The historical database reset is already complete.
 - Do **not** run Part 4D, Part 5, `schema.sql`, `update_schema.sql`, or any older SQL file again.
-- For this feature branch, run only the two additive migrations in `supabase/migrations/`, in filename order. The second migration creates the product-image bucket and Root Owner-only image controls.
+- Run the three additive files in `supabase/migrations/` in filename order. They are safe to re-run and do not reset historical data:
+  1. `202608180001_outlet_admin_stock_pricing.sql`
+  2. `202608180002_outlet_directory_product_images.sql`
+  3. `202608270001_mobile_routes_pricing_roles_repair.sql`
+- The first file creates the priced-delivery and outlet-admin functions currently reported missing by the API. All three files explicitly refresh the PostgREST schema cache.
 - This package contains website source code only. It intentionally contains no database-reset SQL, audit workbook, `.env.local`, password, or private key.
 - Keep the existing `.env.local` in your Git repository. Do not replace it with `.env.local.example`.
 
@@ -27,7 +31,11 @@ Verified on 2026-08-11 for the completed fiscal-2019 Supabase database.
 - Credit Sales, Orders, Samples, and Inventory Ledger screens
 - Editable DRAFT records
 - CSV, XLSX, and text-based PDF imports with preview
-- Root Owner pricing, tax, outlet, role, and import controls
+- Standalone, category-scoped outlet pages and fuzzy search
+- Mobile bottom-sheet outlet editing at the selected card
+- Live bottle price, tax, and pack-size delivery calculations
+- Root Owner user-management page with promote, demote, ban, and restore controls
+- Root Owner product-image and import controls
 - Official KONJO Foods logo
 
 ## Local validation already completed

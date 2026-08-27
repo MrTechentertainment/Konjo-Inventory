@@ -357,4 +357,6 @@ grant execute on function public.admin_set_outlet_stock_exact(uuid,uuid,integer,
 grant execute on function public.record_priced_outlet_delivery_batch(uuid,jsonb,uuid,text) to authenticated;
 grant execute on function public.get_outlet_delivery_financials(uuid,integer) to authenticated;
 
+notify pgrst, 'reload schema';
+
 commit;

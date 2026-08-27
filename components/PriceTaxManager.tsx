@@ -54,8 +54,19 @@ export default function PriceTaxManager() {
         `Saving ${product.name}`
       );
       if (result.error) throw result.error;
-      const updated = (Array.isArray(result.data) ? result.data[0] : result.data) as Product | null;
-      if (updated) setProducts((current) => current.map((row) => row.id === updated.id ? updated : row));
+      const verification = await withTimeout(
+        async (signal) => await supabase.from('products').select('*').eq('id', product.id).abortSignal(signal).single(),
+        `Verifying ${product.name}`
+      );
+      if (verification.error) throw verification.error;
+      const updated = verification.data as Product;
+      const priceSaved = Math.abs(Number(updated.unit_price_etb) - price) < 0.0001;
+      const taxSaved = Math.abs(Number(updated.tax_rate) - taxPercent / 100) < 0.000001;
+      const packSaved = Number(updated.bottles_per_pack) === bottlesPerPack;
+      if (!priceSaved || !taxSaved || !packSaved) throw new Error('Supabase returned different values after saving. No success was recorded.');
+      setProducts((current) => current.map((row) => row.id === updated.id ? updated : row));
+      setDrafts((current) => ({ ...current, [updated.id]: { price: String(Number(updated.unit_price_etb)), taxPercent: String(Number(updated.tax_rate) * 100), bottlesPerPack: String(updated.bottles_per_pack) } }));
+      window.dispatchEvent(new Event('konjo:product-commercials-updated'));
       setSavedId(product.id);
       window.setTimeout(() => setSavedId((current) => current === product.id ? null : current), 1800);
     } catch (caught) {

@@ -53,6 +53,8 @@ export interface UserProfile {
   username: string;
   role: UserRole;
   created_at: string;
+  is_banned: boolean;
+  banned_at: string | null;
 }
 
 export interface Outlet {

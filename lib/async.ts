@@ -21,12 +21,15 @@ export async function withTimeout<T>(
 }
 
 export function errorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim()) return error.message;
+  let message = '';
+  if (error instanceof Error && error.message.trim()) message = error.message.trim();
   if (typeof error === 'object' && error && 'message' in error) {
-    const message = String((error as { message?: unknown }).message ?? '').trim();
-    if (message) return message;
+    message = String((error as { message?: unknown }).message ?? '').trim() || message;
   }
-  return fallback;
+  if (/schema cache|could not find the function|pgrst202/i.test(message)) {
+    return 'The website database upgrade is incomplete. Run the supplied Supabase migrations in filename order, then reload the page. The missing function cannot be repaired by repeatedly pressing Save.';
+  }
+  return message || fallback;
 }
 
 export function isTransientError(error: unknown): boolean {

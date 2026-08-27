@@ -1,16 +1,13 @@
 'use client';
 
-import dynamic from 'next/dynamic';
 import { ClipboardList, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
-import { isAdminProfile, isRootProfile } from '@/lib/authz';
+import { isAdminProfile } from '@/lib/authz';
 import type { SyncState } from '@/lib/types';
 import BrandLogo from './BrandLogo';
 import HamburgerMenu from './HamburgerMenu';
 import StatusBadge from './StatusBadge';
-
-const RoleManagementModal = dynamic(() => import('./RoleManagementModal'), { ssr: false });
 
 interface HeaderProps {
   syncState?: SyncState;
@@ -24,7 +21,6 @@ const ROLE_LABEL = { SUPER_ADMIN: 'Root Owner', ADMIN: 'Admin', BASIC: 'Field Sa
 
 export default function Header({ syncState, title = 'KONJO Inventory', subtitle = 'Addis Ababa operations', onOpenAudit, onOpenAddProduct }: HeaderProps) {
   const { profile } = useAuth();
-  const canManageRoles = isRootProfile(profile);
   const homeHref = isAdminProfile(profile) ? '/admin' : '/outlets';
   const homeLabel = isAdminProfile(profile) ? 'Return to Admin Dashboard' : 'Return to Outlets Portal';
   return (
@@ -63,7 +59,6 @@ export default function Header({ syncState, title = 'KONJO Inventory', subtitle 
           </div>
         </div>
       </div>
-      {canManageRoles && <RoleManagementModal />}
     </header>
   );
 }

@@ -27,6 +27,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 function friendlyAuthError(message: string): string {
   if (/invalid login credentials/i.test(message)) return 'Incorrect username or password.';
+  if (/user.*banned|banned.*user/i.test(message)) return 'This account has been banned. Contact the Root Owner for access.';
   if (/email not confirmed/i.test(message)) return 'Account confirmation is enabled in Supabase. Disable email confirmation for this username-only setup.';
   if (/user already registered/i.test(message)) return 'That username is already registered.';
   return message;
@@ -49,6 +50,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await supabase.rpc('get_my_profile');
       if (error) throw error;
       const row = Array.isArray(data) ? data[0] : data;
+      if ((row as UserProfile | undefined)?.is_banned) {
+        await supabase.auth.signOut({ scope: 'local' });
+        if (requestId === latestProfileRequest.current) setProfile(null);
+        return;
+      }
       if (requestId === latestProfileRequest.current) setProfile((row as UserProfile | undefined) ?? null);
     } catch (error) {
       if (requestId === latestProfileRequest.current) setProfile(null);

@@ -24,7 +24,7 @@ export default function OutletWorkspacePage() {
   const canEditStock = isAdminProfile(profile);
   const params = useParams<{ outletId: string }>();
   const outletId = params.outletId;
-  const { outlet, products, stockByProduct, loading, error, clearError, logChange, recordDelivery, setExactStock } = useOutletInventory(outletId);
+  const { outlet, products, stockByProduct, loading, error, clearError, logChange, recordDelivery, setExactStock, refreshProducts } = useOutletInventory(outletId);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
@@ -33,6 +33,10 @@ export default function OutletWorkspacePage() {
   }, [outlet]);
 
   const deliver = (entries: { productId: string; quantity: number; unit: 'PACK' }[]) => recordDelivery(entries);
+  const openDelivery = async () => {
+    const refreshed = await refreshProducts();
+    if (refreshed) setDeliveryOpen(true);
+  };
 
   if (loading) return <div className="flex min-h-dvh items-center justify-center bg-konjo-charcoal"><div className="h-6 w-6 animate-spin rounded-full border-2 border-white/15 border-t-konjo-red" /></div>;
   if (!outlet) return <div className="min-h-dvh bg-konjo-charcoal p-6 text-konjo-cream"><p>{error || 'Outlet not found.'}</p><Link href="/outlets" className="mt-4 inline-block text-konjo-red">Back to outlets</Link></div>;
@@ -42,7 +46,7 @@ export default function OutletWorkspacePage() {
     <div className="min-h-dvh bg-konjo-charcoal">
       <Header title={outlet.name} subtitle={OUTLET_TYPE_LABEL[outlet.type]} />
       <main className="mx-auto max-w-4xl pt-4">
-        <div className="mb-4 flex items-center justify-between px-4"><Link href="/outlets" className="flex items-center gap-1.5 text-xs text-konjo-cream/55"><ArrowLeft size={15} />All outlets</Link>{outlet.type === 'SUPERMARKET' && <button onClick={() => setDeliveryOpen(true)} className="flex h-10 items-center gap-2 rounded-xl bg-konjo-green px-3 text-xs font-semibold text-white active:scale-95"><PackagePlus size={16} />New delivery</button>}</div>
+        <div className="mb-4 flex items-center justify-between gap-3 px-4"><Link href="/outlets" className="flex items-center gap-1.5 text-xs text-konjo-cream/55"><ArrowLeft size={15} />All outlets</Link>{outlet.type === 'SUPERMARKET' && <button onClick={() => void openDelivery()} className="flex min-h-11 items-center gap-2 rounded-xl bg-konjo-green px-3 py-2 text-xs font-semibold text-white active:scale-95"><PackagePlus size={16} />New delivery</button>}</div>
         {outlet.type === 'SUPERMARKET' ? (
           <div className="px-4 pb-10">
             <div className="mb-3"><h1 className="font-display text-lg font-bold text-konjo-cream">Current delivered stock</h1><p className="text-[11px] text-konjo-cream/40">Pack size is configured per product in Price &amp; Taxes. Only Admins and the Root Owner can make exact stock corrections.</p></div>

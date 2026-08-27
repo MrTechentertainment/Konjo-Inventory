@@ -65,6 +65,21 @@ export function useOutletInventory(outletId: string) {
     });
   }, []);
 
+  const refreshProducts = useCallback(async () => {
+    try {
+      const result = await withTimeout(
+        async (signal) => await supabase.from('products').select('*').eq('is_active', true).order('category').order('name').abortSignal(signal),
+        'Refreshing product prices'
+      );
+      if (result.error) throw result.error;
+      setProducts((result.data as Product[]) ?? []);
+      return true;
+    } catch (caught) {
+      setError(errorMessage(caught, 'Could not refresh the latest product prices and pack sizes.'));
+      return false;
+    }
+  }, []);
+
   const load = useCallback(async () => {
     try {
       const [outletResult, productsResult, inventoryResult] = await Promise.all([
@@ -116,6 +131,29 @@ export function useOutletInventory(outletId: string) {
       void supabase.removeChannel(channel);
     };
   }, [outletId, upsertInventory]);
+
+  useEffect(() => {
+    const updateProduct = (nextProduct: Product) => {
+      setProducts((current) => {
+        if (!nextProduct.is_active) return current.filter((product) => product.id !== nextProduct.id);
+        return current.some((product) => product.id === nextProduct.id)
+          ? current.map((product) => product.id === nextProduct.id ? nextProduct : product)
+          : [...current, nextProduct].sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+      });
+    };
+    const channel = supabase
+      .channel(`outlet-products-${outletId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
+        if (payload.eventType !== 'DELETE') updateProduct(payload.new as Product);
+      })
+      .subscribe();
+    const refresh = () => { void refreshProducts(); };
+    window.addEventListener('konjo:product-commercials-updated', refresh);
+    return () => {
+      window.removeEventListener('konjo:product-commercials-updated', refresh);
+      void supabase.removeChannel(channel);
+    };
+  }, [outletId, refreshProducts]);
 
   const stockByProduct = useMemo(
     () =>
@@ -261,5 +299,6 @@ export function useOutletInventory(outletId: string) {
     logChange,
     recordDelivery,
     setExactStock,
+    refreshProducts,
   };
 }

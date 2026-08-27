@@ -19,7 +19,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { isRootProfile } from '@/lib/authz';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
-import { ROLE_MODAL_EVENT } from './HamburgerMenu';
 
 interface Summary {
   products: number;
@@ -131,10 +130,12 @@ export default function AdminDashboard() {
         })}
 
         {root && (
-          <motion.button initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -3 }} onClick={() => window.dispatchEvent(new Event(ROLE_MODAL_EVENT))} className="group relative flex min-h-48 overflow-hidden rounded-3xl border border-konjo-amber/20 bg-konjo-amber/[0.055] p-5 text-left shadow-xl shadow-black/15">
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -3 }}>
+            <Link href="/admin/users" className="group relative flex min-h-48 overflow-hidden rounded-3xl border border-konjo-amber/20 bg-konjo-amber/[0.055] p-5 text-left shadow-xl shadow-black/15">
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-konjo-amber/25 via-konjo-amber/5 to-transparent" />
-            <div className="relative flex w-full flex-col"><div className="flex items-start justify-between"><span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-konjo-amber/25 bg-konjo-amber/10 text-konjo-amber"><UsersRound size={21} /></span><ArrowUpRight size={18} className="text-konjo-amber/50" /></div><h2 className="mt-5 font-display text-lg font-bold text-konjo-cream">User Roles</h2><p className="mt-1 text-xs leading-relaxed text-konjo-cream/45">Promote field accounts to Admin or return them to Basic access.</p><p className="mt-auto pt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-konjo-amber">Root only</p></div>
-          </motion.button>
+            <div className="relative flex w-full flex-col"><div className="flex items-start justify-between"><span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-konjo-amber/25 bg-konjo-amber/10 text-konjo-amber"><UsersRound size={21} /></span><ArrowUpRight size={18} className="text-konjo-amber/50" /></div><h2 className="mt-5 font-display text-lg font-bold text-konjo-cream">User Management</h2><p className="mt-1 text-xs leading-relaxed text-konjo-cream/45">Review ranks, promote, demote, ban, or restore user accounts.</p><p className="mt-auto pt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-konjo-amber">Root only</p></div>
+            </Link>
+          </motion.div>
         )}
       </div>
     </main>

@@ -47,7 +47,7 @@ function ProductCard({ product, onQuickAdjust, onOpenBatch, canEditImage = false
           <span className={`inline-block rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide ${accent.chip}`}>
             {product.category}
           </span>
-          <h3 className="mt-1 truncate font-display text-[14.5px] font-semibold leading-tight text-konjo-cream">
+          <h3 className="mt-1 break-words font-display text-[14.5px] font-semibold leading-snug text-konjo-cream">
             {product.name}
           </h3>
           <p className="font-mono text-[10.5px] tracking-tight text-konjo-cream/45">{product.sku}</p>

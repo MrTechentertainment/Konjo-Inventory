@@ -86,4 +86,6 @@ $$;
 revoke all on function public.root_set_product_image(uuid,text) from public, anon;
 grant execute on function public.root_set_product_image(uuid,text) to authenticated;
 
+notify pgrst, 'reload schema';
+
 commit;
