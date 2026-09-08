@@ -23,7 +23,7 @@ export default function RootUserManagementPage() {
       <main className="mx-auto max-w-3xl px-4 pt-6">
         <div className="mb-5">
           <h1 className="font-display text-xl font-bold text-konjo-cream">Users and access</h1>
-          <p className="mt-1 text-xs leading-relaxed text-konjo-cream/45">Review every account and rank. Promote or demote staff, or ban an account from accessing operational data.</p>
+          <p className="mt-1 text-xs leading-relaxed text-konjo-cream/45">Tap a person to reset their password, change their rank, ban them, or restore access.</p>
         </div>
         <UserManagement />
       </main>

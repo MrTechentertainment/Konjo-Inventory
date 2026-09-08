@@ -5,7 +5,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { isSupabaseConfigured, supabase } from './supabaseClient';
 import type { UserProfile } from './types';
 import { errorMessage } from './async';
-import { usernameEmail } from './authz';
 
 interface AuthResult {
   ok: boolean;
@@ -110,7 +109,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (username: string, password: string): Promise<AuthResult> => {
     if (!isSupabaseConfigured) return { ok: false, error: 'Supabase environment variables are missing.' };
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email: usernameEmail(username), password });
+      const response = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'login', username: username.trim(), password }),
+      });
+      const body = await response.json() as { error?: string; session?: { access_token: string; refresh_token: string } };
+      if (!response.ok || !body.session) return { ok: false, error: friendlyAuthError(body.error ?? 'Sign-in failed.') };
+      const { error } = await supabase.auth.setSession(body.session);
       return error ? { ok: false, error: friendlyAuthError(error.message) } : { ok: true };
     } catch (error) {
       return { ok: false, error: errorMessage(error, 'Could not reach the sign-in service.') };
@@ -124,21 +130,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, error: 'Use 3–32 letters, numbers, dots, dashes or underscores.' };
     }
     if (clean.toLowerCase() === 'natanim') return { ok: false, error: 'That username is reserved.' };
-    const strong = password.length >= 12 && /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
-    if (!strong) {
-      return { ok: false, error: 'Use at least 12 characters with uppercase, lowercase, a number and a symbol.' };
-    }
+    if (password.length < 6) return { ok: false, error: 'Password must contain at least 6 characters.' };
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email: usernameEmail(clean),
-        password,
-        options: { data: { username: clean } },
+      const response = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'register', username: clean, password }),
       });
-      if (error) return { ok: false, error: friendlyAuthError(error.message) };
-      if (!data.session) {
+      const body = await response.json() as { error?: string; session?: { access_token: string; refresh_token: string } | null };
+      if (!response.ok) return { ok: false, error: friendlyAuthError(body.error ?? 'Could not create the account.') };
+      if (!body.session) {
         return { ok: false, error: 'Account created, but email confirmation is enabled. Disable it in Supabase Auth settings, then sign in.' };
       }
-      return { ok: true };
+      const { error } = await supabase.auth.setSession(body.session);
+      return error ? { ok: false, error: friendlyAuthError(error.message) } : { ok: true };
     } catch (error) {
       return { ok: false, error: errorMessage(error, 'Could not create the account.') };
     }

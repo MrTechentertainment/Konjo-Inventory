@@ -90,8 +90,9 @@ export default function LoginGate() {
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
+                minLength={mode === 'register' ? 6 : undefined}
                 className="min-w-0 flex-1 bg-transparent text-sm text-konjo-cream placeholder:text-konjo-cream/25 focus:outline-none"
-                placeholder={mode === 'register' ? '12+ strong characters' : 'Password'}
+                placeholder={mode === 'register' ? '6 or more characters' : 'Password'}
               />
               <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label="Show or hide password" className="text-konjo-cream/40">
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -106,7 +107,7 @@ export default function LoginGate() {
             {submitting ? 'Please wait…' : mode === 'login' ? 'Sign in securely' : 'Create basic account'}
           </button>
         </form>
-        <p className="mt-4 text-center text-[10.5px] leading-relaxed text-konjo-cream/35">Field accounts begin with Basic access. Only the Root Owner can change roles.</p>
+        <p className="mt-4 text-center text-[10.5px] leading-relaxed text-konjo-cream/35">Field accounts begin with Basic access. Passwords require at least 6 characters; only the Root Owner can change roles.</p>
       </motion.section>
     </main>
   );
